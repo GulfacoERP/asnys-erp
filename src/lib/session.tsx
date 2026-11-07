@@ -49,7 +49,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       if (event === 'SIGNED_IN') markSignedIn();   // links from emails and company sign-in count as this browser session
       if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'USER_UPDATED') {
         if (event === 'USER_UPDATED') setRecovery(false);
-        reload().catch(() => setLoading(false));
+        // Never call Supabase inside this callback: it holds the sign-in lock and the call would wait forever ("Loading…").
+        setTimeout(() => { reload().catch(() => setLoading(false)); }, 0);
       }
     });
     return () => data.subscription.unsubscribe();

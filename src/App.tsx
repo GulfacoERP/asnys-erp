@@ -49,7 +49,7 @@ export default function App() {
   const help = location.pathname.match(/^\/help\/([0-9a-f-]{36})\/?$/i);
   if (help && configured) return <PublicHelp companyId={help[1]} />;
   if (!configured) return <NotConfigured />;
-  if (loading) return <div className="center muted">Loading…</div>;
+  if (loading) return <Starting />;
   if (recovery && (session || !welcome)) return <NewPasswordPage welcome={welcome} />;
   if (!session) return <AuthPage />;
   if (!companies.length) return <NoCompany />;
@@ -265,4 +265,22 @@ function useUnread(uid?: string) {
     return () => { live = false; window.clearInterval(t); window.removeEventListener('asnys:notes', load); };
   }, [uid]);
   return n;
+}
+
+/** The first screen while the app checks the sign-in. If that takes too long, offer a way out instead of spinning forever. */
+function Starting() {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => { const t = setTimeout(() => setSlow(true), 8000); return () => clearTimeout(t); }, []);
+  const restart = async () => {
+    try { await supabase.auth.signOut({ scope: 'local' }); } catch { /* already signed out */ }
+    try { Object.keys(localStorage).filter(k => k.startsWith('sb-')).forEach(k => localStorage.removeItem(k)); } catch { /* storage unavailable */ }
+    location.reload();
+  };
+  return <div className="center muted" style={{ flexDirection: 'column', gap: 12, textAlign: 'center' }}>
+    <span>Loading…</span>
+    {slow && <><span style={{ fontSize: 14 }}>This is taking longer than usual. Check your internet connection, then try again.</span>
+      <div className="actions" style={{ justifyContent: 'center' }}>
+        <button className="btn" type="button" onClick={() => location.reload()}>Try again</button>
+        <button className="btn primary" type="button" onClick={restart}>Sign in again</button></div></>}
+  </div>;
 }
