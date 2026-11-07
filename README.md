@@ -1,0 +1,18 @@
+# Asnys ERP
+
+Cloud ERP for Ghanaian small and mid-sized businesses: VAT invoicing, quotes and orders, credit notes, recurring invoices and multi-currency; inventory across several stores and sites with stock cards, reorder lists, transfers and stocktakes; purchase orders with goods received notes and three-way matching to supplier bills; materials issued to projects and billed to the client; project site stores run by the project team with stock requests, usage against a materials plan and site counts; project document control with numbered documents, revisions, internal review, transmittals, risk assessments and required documents; double-entry accounting, bank reconciliation, budgets and period locking; payroll (PAYE Act 1178, SSNIT, overtime and bonus tax, Tier 3, staff loans); HR with leave balances, recruitment and appraisals; fixed assets with depreciation; CRM with customer 360, lead scoring, campaigns, partners, commissions and forecasting; customer service cases with a public help centre; sales force automation; a resource planner across subsidiaries; a project center for project managers with a start-to-close lifecycle, schedule tracking and a close-out checklist, templates, Gantt plans, budgets, milestone billing, issues and status reports; project purchase requests with budget-checked approval, committed cost and a project cost report tied to the ledger; HR training requests, sessions, certificates and employee training records; projects billed in any currency; and a phone-friendly app for time and expense claims with approval. Project cycle control from tender to final payment: tender register with a pre-submission review by Business Development, Finance and Engineering; Finance registration and budget approval before any project spending; progress reports, milestone certification, billing schedule, invoice follow-up, receivables ageing and financial clearance before closure; contract payment terms with payment schedules, due dates from the contract and reminders to Finance and the project manager; notifications for each unit. Spend requests with approval chains and budget checks, staff cash advances retired with receipts, and petty cash floats counted by denomination and replenished only when reconciled. Purchase orders in USD, EUR or any currency. A contract register with variations, bonds and guarantees, key dates and reminders. Asset check-out to people, project sites and locations, audits, staff requests and QR labels. Staff are invited by email from Settings or their employee record, set their own password, and can reset it themselves. Built for growth: branches and cost centres on every ledger line, approval chains, a full audit trail, a general ledger with books checks, bank and cash transactions, spreadsheet import of opening balances, paged lists for large companies, Microsoft/Google sign-in and a REST API. Every invoice, bill, payslip, schedule and report downloads as PDF or CSV.
+
+- **Front end:** React 18 + TypeScript + Vite, deployed as a static site (Cloudflare Pages).
+- **Back end:** Supabase (Postgres, Auth, one Edge Function for invitation emails). All money postings run in database functions that write balanced journal entries; row-level security isolates each company and enforces roles.
+
+```bash
+npm install
+cp .env.example .env.local   # add your Supabase URL and anon key
+npm run dev                  # http://localhost:5173
+npm run test:db              # 330 database checks in an in-memory Postgres
+npm run build                # production build in dist/
+```
+
+Each company's own name shows in the menu, browser tab and on every document; a copy for a single company can be fully branded with `VITE_BRAND_NAME`.
+
+Full step-by-step instructions: [SETUP.md](SETUP.md).
