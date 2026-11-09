@@ -44,6 +44,8 @@ import { CampaignsPage, CommissionsPage, CrmDashboard, PartnersPage } from './pa
 import { Logo, LogoMark } from './components/Logo';
 import { ContractListPage, ContractView, ContractsPage } from './pages/Contracts';
 import { AssetAuditsPage, AssetMaintenancePage, AssetMovementsPage, AssetRequestsPage } from './pages/AssetOps';
+import { AssetImportPage, AssetItemsPage, AssetLocationsPage, AssetSettingsPage, AssetTransfersPage, LicencesPage, WarrantyPage } from './pages/AssetMore';
+import { DriversPage, FleetPage, FleetReportsPage, FleetServicePage, FuelPage, TripsPage, VehicleRequestsPage, VehicleView, WaybillView, WaybillsPage } from './pages/Fleet';
 import { AdvanceView, AdvancesPage, PettyCashPage, RequestView, RequestsPage } from './pages/Spend';
 
 export default function App() {
@@ -197,6 +199,23 @@ function Shell() {
           <Route path="/assets/audits" element={<AssetAuditsPage />} />
           <Route path="/assets/maintenance" element={<AssetMaintenancePage />} />
           <Route path="/assets/movements" element={<AssetMovementsPage />} />
+          <Route path="/assets/locations" element={<AssetLocationsPage />} />
+          <Route path="/assets/transfers" element={<AssetTransfersPage />} />
+          <Route path="/assets/items" element={<AssetItemsPage />} />
+          <Route path="/assets/licences" element={<LicencesPage />} />
+          <Route path="/assets/warranty" element={<WarrantyPage />} />
+          <Route path="/assets/import" element={<AssetImportPage />} />
+          <Route path="/assets/alerts" element={<AssetSettingsPage />} />
+          <Route path="/fleet" element={<FleetPage />} />
+          <Route path="/fleet/vehicles/:id" element={<VehicleView />} />
+          <Route path="/fleet/requests" element={<VehicleRequestsPage />} />
+          <Route path="/fleet/trips" element={<TripsPage />} />
+          <Route path="/fleet/fuel" element={<FuelPage />} />
+          <Route path="/fleet/service" element={<FleetServicePage />} />
+          <Route path="/fleet/waybills" element={<WaybillsPage />} />
+          <Route path="/fleet/waybills/:id" element={<WaybillView />} />
+          <Route path="/fleet/drivers" element={<DriversPage />} />
+          <Route path="/fleet/reports" element={<FleetReportsPage />} />
           <Route path="/contracts" element={<ContractsPage />} />
           <Route path="/requests" element={<RequestsPage />} />
           <Route path="/requests/:id" element={<RequestView />} />
