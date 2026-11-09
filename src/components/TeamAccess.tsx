@@ -24,7 +24,10 @@ export function TeamAccess({ roles }: { roles: [string, string][] }) {
     const r = await rpc<{ members: any[]; invites: any[] }>('team_access', { cid });
     // HSE officers (v2.9). Older databases have no such column: the tick is simply not shown.
     const { data: flags, error: e } = await supabase.from('memberships').select('user_id,hse').eq('company_id', cid);
-    return { ...r, hse: e ? null : Object.fromEntries((flags || []).map((f: any) => [f.user_id, !!f.hse])) as Record<string, boolean> };
+    // Transport officers (v3.1), likewise hidden on older databases.
+    const { data: tf, error: e2 } = await supabase.from('memberships').select('user_id,transport').eq('company_id', cid);
+    return { ...r, hse: e ? null : Object.fromEntries((flags || []).map((f: any) => [f.user_id, !!f.hse])) as Record<string, boolean>,
+      transport: e2 ? null : Object.fromEntries((tf || []).map((f: any) => [f.user_id, !!f.transport])) as Record<string, boolean> };
   }, [cid]);
   const open = (data?.invites || []).filter(i => i.status !== 'revoked');
   const revoked = (data?.invites || []).filter(i => i.status === 'revoked');
@@ -47,7 +50,7 @@ export function TeamAccess({ roles }: { roles: [string, string][] }) {
     <Loading error={error} loading={loading && !data} />
     {data && <>
       <div className="scroll" style={{ borderTop: '1px solid var(--line)' }}><table>
-        <thead><tr><th>Email</th><th>Employee</th><th>Role</th>{data.hse && <th title="Health, safety and compliance officer">HSE officer</th>}<th>Last sign-in</th><th></th></tr></thead>
+        <thead><tr><th>Email</th><th>Employee</th><th>Role</th>{data.hse && <th title="Health, safety and compliance officer">HSE officer</th>}{data.transport && <th title="Allocates vehicles and keeps the fleet records. The storekeeper and Finance can always do this.">Transport officer</th>}<th>Last sign-in</th><th></th></tr></thead>
         <tbody>{data.members.map(m => { const me = m.user_id === session?.user.id; return <tr key={m.user_id}>
           <td>{m.email}{me && <span className="muted"> (you)</span>}</td>
           <td>{m.employee || <span className="muted">Not linked</span>}</td>
@@ -57,6 +60,9 @@ export function TeamAccess({ roles }: { roles: [string, string][] }) {
           {data.hse && <td>{admin ? <input type="checkbox" aria-label={`${m.email} is an HSE officer`} checked={!!data.hse[m.user_id] || ['owner', 'admin'].includes(m.role)} disabled={['owner', 'admin'].includes(m.role)}
             onChange={e => act.run(async () => { await rpc('set_member_hse', { cid, p_user: m.user_id, p_on: e.target.checked }); reload(); }, e.target.checked ? 'Now an HSE officer' : 'No longer an HSE officer')} />
             : (data.hse[m.user_id] || ['owner', 'admin'].includes(m.role)) ? 'Yes' : ''}</td>}
+          {data.transport && <td>{admin ? <input type="checkbox" aria-label={`${m.email} is a transport officer`} checked={!!data.transport[m.user_id] || ['owner', 'admin', 'accountant', 'store'].includes(m.role)} disabled={['owner', 'admin', 'accountant', 'store'].includes(m.role)}
+            onChange={e => act.run(async () => { await rpc('set_member_transport', { cid, p_user: m.user_id, p_on: e.target.checked }); reload(); }, e.target.checked ? 'Now a transport officer' : 'No longer a transport officer')} />
+            : (data.transport[m.user_id] || ['owner', 'admin', 'accountant', 'store'].includes(m.role)) ? 'Yes' : ''}</td>}
           <td className="muted">{ago(m.last_sign_in_at)}</td>
           <td className="r" style={{ whiteSpace: 'nowrap' }}>
             {!me && m.email && <ConfirmButton className="btn small ghost" label="Send password reset" confirm={`Email ${m.email} a link to choose a new password?`} onConfirm={() => act.run(() => sendPasswordReset(m.email), `Password reset link sent to ${m.email}`)} />}
