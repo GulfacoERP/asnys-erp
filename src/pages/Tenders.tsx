@@ -27,7 +27,7 @@ export function TendersPage() {
   const act = useAction();
   const statuses = { open: ['registered', 'preparing', 'review'], submitted: ['submitted'], awarded: ['awarded'], closed: ['lost', 'no_bid', 'cancelled'], all: null }[view];
   const pg = usePaged(async (a, b) => {
-    let x = supabase.from('tenders').select('*, project:projects(id,number)', { count: 'exact' }).eq('company_id', cid).order('submission_deadline', { ascending: view === 'open', nullsFirst: false });
+    let x = supabase.from('tenders').select('*, project:projects!tenders_project_id_fkey(id,number)', { count: 'exact' }).eq('company_id', cid).order('submission_deadline', { ascending: view === 'open', nullsFirst: false });
     if (statuses) x = x.in('status', statuses);
     if (search) x = x.or(`number.ilike.%${search}%,title.ilike.%${search}%,client_name.ilike.%${search}%,client_ref.ilike.%${search}%`, {});
     return qPage(x.range(a, b) as any);
@@ -71,25 +71,37 @@ export function TendersPage() {
         est_value: Number(add.est_value) || 0, est_cost: Number(add.est_cost) || 0, bid_bond_required: add.bid_bond_required, bid_bond_amount: add.bid_bond_amount ? Number(add.bid_bond_amount) : null,
         engineering_lead_id: add.engineering_lead_id || null, finance_lead_id: add.finance_lead_id || null, notes: add.notes || null }).select('id').single() as any);
       nav('/tenders/' + t.id); }, 'Registered. Finance and Engineering have been notified.')}>
-      <Field label="Title" id="tn-title" value={add.title} onChange={v => setAdd({ ...add, title: v })} placeholder="e.g. Prestea 161 kV substation civil works" required />
-      <div className="grid-form">
-        <Select label="Type" id="tn-kind" value={add.kind} onChange={v => setAdd({ ...add, kind: v })} options={KINDS} />
-        <Select label="Client" id="tn-cust" value={add.customer_id} onChange={v => setAdd({ ...add, customer_id: v })} options={[['', 'Not a customer yet'], ...meta.customers.map(c => [c.id, c.name] as [string, string])]} />
-        {!add.customer_id && <Field label="Client name" id="tn-cname" value={add.client_name} onChange={v => setAdd({ ...add, client_name: v })} />}
-        <Field label="Client's reference" id="tn-ref" value={add.client_ref} onChange={v => setAdd({ ...add, client_ref: v })} />
-        <Field label="Submission deadline" id="tn-dl" type="datetime-local" value={add.deadline} onChange={v => setAdd({ ...add, deadline: v })} />
-        <Field label="Location" id="tn-loc" value={add.location} onChange={v => setAdd({ ...add, location: v })} />
-        <Field label="Estimated value (GH₵)" id="tn-val" type="number" step="0.01" min="0" value={add.est_value} onChange={v => setAdd({ ...add, est_value: v })} />
-        <Field label="Estimated cost (GH₵)" id="tn-cost" type="number" step="0.01" min="0" value={add.est_cost} onChange={v => setAdd({ ...add, est_cost: v })} />
-        <Select label="Engineering lead" id="tn-eng" value={add.engineering_lead_id} onChange={v => setAdd({ ...add, engineering_lead_id: v })} options={[['', '—'], ...meta.team.filter(m => ['project_manager', 'owner', 'admin'].includes(m.role)).map(m => [m.user_id, m.email] as [string, string])]} />
-        <Select label="Finance lead" id="tn-fin" value={add.finance_lead_id} onChange={v => setAdd({ ...add, finance_lead_id: v })} options={[['', '—'], ...meta.team.filter(m => ['accountant', 'owner', 'admin'].includes(m.role)).map(m => [m.user_id, m.email] as [string, string])]} />
-      </div>
-      <label className="check"><input type="checkbox" checked={add.bid_bond_required} onChange={e => setAdd({ ...add, bid_bond_required: e.target.checked })} /> Bid bond or security required</label>
-      {add.bid_bond_required && <Field label="Bid bond amount (GH₵)" id="tn-bond" type="number" step="0.01" min="0" value={add.bid_bond_amount} onChange={v => setAdd({ ...add, bid_bond_amount: v })} />}
-      <Field label="Notes" id="tn-notes" type="textarea" value={add.notes} onChange={v => setAdd({ ...add, notes: v })} />
+      <TenderFields f={add} set={setAdd} customers={meta.customers} team={meta.team} />
     </FormModal>}
   </>;
 }
+
+/** The tender's details: used to register a tender and to edit it later. */
+function TenderFields({ f, set, customers, team }: { f: any; set: (v: any) => void; customers: any[]; team: any[] }) {
+  const add = f, setAdd = set;
+  const meta = { customers, team };
+  return <>
+      <Field label="Title" id="tn-title" value={add.title} onChange={v => setAdd({ ...add, title: v })} placeholder="e.g. Prestea 161 kV substation civil works" required />
+    <div className="grid-form">
+      <Select label="Type" id="tn-kind" value={add.kind} onChange={v => setAdd({ ...add, kind: v })} options={KINDS} />
+      <Select label="Client" id="tn-cust" value={add.customer_id} onChange={v => setAdd({ ...add, customer_id: v })} options={[['', 'Not a customer yet'], ...meta.customers.map(c => [c.id, c.name] as [string, string])]} />
+      {!add.customer_id && <Field label="Client name" id="tn-cname" value={add.client_name} onChange={v => setAdd({ ...add, client_name: v })} />}
+      <Field label="Client's reference" id="tn-ref" value={add.client_ref} onChange={v => setAdd({ ...add, client_ref: v })} />
+      <Field label="Submission deadline" id="tn-dl" type="datetime-local" value={add.deadline} onChange={v => setAdd({ ...add, deadline: v })} />
+      <Field label="Location" id="tn-loc" value={add.location} onChange={v => setAdd({ ...add, location: v })} />
+      <Field label="Estimated value (GH₵)" id="tn-val" type="number" step="0.01" min="0" value={add.est_value} onChange={v => setAdd({ ...add, est_value: v })} />
+      <Field label="Estimated cost (GH₵)" id="tn-cost" type="number" step="0.01" min="0" value={add.est_cost} onChange={v => setAdd({ ...add, est_cost: v })} />
+      <Select label="Engineering lead" id="tn-eng" value={add.engineering_lead_id} onChange={v => setAdd({ ...add, engineering_lead_id: v })} options={[['', '—'], ...meta.team.filter(m => ['project_manager', 'owner', 'admin'].includes(m.role)).map(m => [m.user_id, m.email] as [string, string])]} />
+      <Select label="Finance lead" id="tn-fin" value={add.finance_lead_id} onChange={v => setAdd({ ...add, finance_lead_id: v })} options={[['', '—'], ...meta.team.filter(m => ['accountant', 'owner', 'admin'].includes(m.role)).map(m => [m.user_id, m.email] as [string, string])]} />
+    </div>
+    <label className="check"><input type="checkbox" checked={add.bid_bond_required} onChange={e => setAdd({ ...add, bid_bond_required: e.target.checked })} /> Bid bond or security required</label>
+    {add.bid_bond_required && <Field label="Bid bond amount (GH₵)" id="tn-bond" type="number" step="0.01" min="0" value={add.bid_bond_amount} onChange={v => setAdd({ ...add, bid_bond_amount: v })} />}
+    <Field label="Notes" id="tn-notes" type="textarea" value={add.notes} onChange={v => setAdd({ ...add, notes: v })} />
+  </>;
+}
+
+/** A stored deadline as the value a date-and-time field expects (local time). */
+const toLocalInput = (iso?: string | null) => { if (!iso) return ''; const d = new Date(iso); return new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 16); };
 
 export function TenderView() {
   const { id } = useParams();
@@ -103,19 +115,21 @@ export function TenderView() {
   const [reg, setReg] = useState<any | null>(null);
   const [file, setFile] = useState<any | null>(null);
   const [meet, setMeet] = useState<any | null>(null);
+  const [details, setDetails] = useState<any | null>(null);
   const { data, error, loading, reload } = useLoad(async () => {
-    const t = await q<any>(supabase.from('tenders').select('*, project:projects(id,number,name)').eq('id', id).single() as any);
-    const [reviews, files, team, centres, meetings] = await Promise.all([
+    const t = await q<any>(supabase.from('tenders').select('*, project:projects!tenders_project_id_fkey(id,number,name)').eq('id', id).single() as any);
+    const [reviews, files, team, centres, meetings, customers] = await Promise.all([
       q<any[]>(supabase.from('tender_reviews').select('*').eq('tender_id', id).order('meeting_date', { ascending: false }) as any),
       q<any[]>(supabase.from('tender_files').select('*').eq('tender_id', id).order('created_at') as any),
       q<any[]>(supabase.from('memberships').select('user_id,email,role').eq('company_id', cid).order('email') as any),
       q<any[]>(supabase.from('cost_centres').select('id,code,name').eq('company_id', cid).eq('active', true).order('code') as any).catch(() => [] as any[]),
       q<any[]>(supabase.from('project_meetings').select('*').eq('tender_id', id).order('meeting_date', { ascending: false }) as any),
+      q<any[]>(supabase.from('customers').select('id,name').eq('company_id', cid).order('name') as any),
     ]);
-    return { t, reviews, files, team, centres, meetings };
+    return { t, reviews, files, team, centres, meetings, customers };
   }, [id, cid]);
   if (!data) return <Loading error={error} loading={loading} />;
-  const { t, reviews, files, team, centres, meetings } = data;
+  const { t, reviews, files, team, centres, meetings, customers } = data;
   const who = (u?: string | null) => team.find(m => m.user_id === u)?.email || '';
   const r = reviews[0];
   const open = ['registered', 'preparing', 'review'].includes(t.status);
@@ -128,6 +142,7 @@ export function TenderView() {
       <Link className="btn" to="/tenders">Back</Link>
       {t.status === 'registered' && <button className="btn" type="button" onClick={() => act.run(async () => { await rpc('set_tender_status', { p_id: id, p_to: 'preparing' }); done(); })}>Start preparing</button>}
       {open && !r && <button className="btn primary" type="button" onClick={() => setReview({ meeting_date: today(), summary_shared_on: '', attendees: '' })}>Schedule pre-submission review</button>}
+      {!['awarded', 'lost', 'no_bid', 'cancelled'].includes(t.status) && can('sales', 'accountant', 'project_manager') && <button className="btn" type="button" onClick={() => setDetails({ title: t.title, kind: t.kind, customer_id: t.customer_id || '', client_name: t.customer_id ? '' : t.client_name || '', client_ref: t.client_ref || '', location: t.location || '', deadline: toLocalInput(t.submission_deadline), est_value: t.est_value ? String(t.est_value) : '', est_cost: t.est_cost ? String(t.est_cost) : '', bid_bond_required: !!t.bid_bond_required, bid_bond_amount: t.bid_bond_amount != null ? String(t.bid_bond_amount) : '', engineering_lead_id: t.engineering_lead_id || '', finance_lead_id: t.finance_lead_id || '', notes: t.notes || '' })}>Edit</button>}
       {open && <button className="btn primary" type="button" onClick={() => setMove({ to: 'submitted', date: today(), value: String(t.est_value || ''), note: '' })}>Mark submitted</button>}
       {(t.status === 'submitted' || (t.kind === 'direct_award' && open)) && can('sales', 'accountant') && <button className="btn primary" type="button" onClick={() => setAward({ type: t.kind === 'direct_award' ? 'purchase_order' : 'contract', ref: '', signed: today(), value: String(t.submitted_value || t.est_value || ''), note: '', file: null, days: String(t.payment_terms_days ?? 30), adv: String(t.advance_pct ?? 0), ret: String(t.retention_pct ?? 0), terms: t.payment_terms_notes || '' })}>Record award</button>}
       {t.status === 'submitted' && <button className="btn" type="button" onClick={() => setMove({ to: 'lost', date: today(), note: '' })}>Lost</button>}
@@ -185,6 +200,15 @@ export function TenderView() {
         <Field label="Summary report shared on" id="rv-sum" type="date" value={review.summary_shared_on} onChange={v => setReview({ ...review, summary_shared_on: v })} /></div>
       <Field label="Attendees" id="rv-att" value={review.attendees} onChange={v => setReview({ ...review, attendees: v })} placeholder="BD, Finance, Engineering" />
       <p className="muted" style={{ margin: 0, fontSize: 13 }}>Upload the summary report under Files so everyone can read it before the meeting.</p>
+    </FormModal>}
+    {details && <FormModal title="Edit tender details" busy={act.busy} onClose={() => setDetails(null)} onSave={() => act.run(async () => {
+      const cust = customers.find(c => c.id === details.customer_id);
+      await q(supabase.from('tenders').update({ title: details.title, kind: details.kind, customer_id: details.customer_id || null, client_name: cust ? cust.name : details.client_name || null,
+        client_ref: details.client_ref || null, location: details.location || null, submission_deadline: details.deadline ? new Date(details.deadline).toISOString() : null,
+        est_value: Number(details.est_value) || 0, est_cost: Number(details.est_cost) || 0, bid_bond_required: details.bid_bond_required, bid_bond_amount: details.bid_bond_required && details.bid_bond_amount ? Number(details.bid_bond_amount) : null,
+        engineering_lead_id: details.engineering_lead_id || null, finance_lead_id: details.finance_lead_id || null, notes: details.notes || null }).eq('id', id) as any);
+      setDetails(null); done(); }, 'Tender details saved')}>
+      <TenderFields f={details} set={setDetails} customers={customers} team={team} />
     </FormModal>}
     {edit && r && <FormModal title={edit.unit === 'minutes' ? 'Meeting minutes' : `${units.find(u => u[0] === edit.unit)?.[1]} input`} busy={act.busy} onClose={() => setEdit(null)} onSave={() => act.run(async () => {
       await q(supabase.from('tender_reviews').update({ [edit.unit === 'minutes' ? 'minutes' : edit.unit + '_input']: edit.text || null }).eq('id', r.id) as any); setEdit(null); done(); }, 'Saved')}>

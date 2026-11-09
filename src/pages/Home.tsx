@@ -3,6 +3,7 @@ import { useSession } from '../lib/session';
 import { MODULES, ModuleIcon } from '../lib/modules';
 import { longDate, today } from '../lib/format';
 import { Dashboard } from './Dashboard';
+import { AnnouncementsPanel } from './People';
 
 /** Home: one tile per module the person's role can open, then today's figures underneath. */
 export function Home() {
@@ -25,6 +26,7 @@ export function Home() {
         <span className="app-tile-blurb">{m.blurb}</span>
       </Link>)}
     </nav>
+    <AnnouncementsPanel />
     <Dashboard embedded />
   </>;
 }

@@ -1,3 +1,4 @@
+import { ProjectSafety } from './Hse';
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { q, rpc, supabase } from '../lib/supabase';
@@ -32,7 +33,13 @@ function ProjectForm({ edit, setEdit, customers, currencies, team, onClose, onSa
   return <FormModal title={edit.id ? (edit.is_template ? 'Edit template' : 'Edit project') : edit.is_template ? 'New template' : 'New project'} onClose={onClose} onSave={onSave} busy={busy}>
     <Field label={edit.is_template ? 'Template name' : 'Project name'} id="pj-name" value={edit.name} onChange={set('name')} required />
     <div className="grid-form">
-      {!edit.is_template && <Select label="Client" id="pj-cust" value={edit.customer_id} onChange={set('customer_id')} options={[['', 'Internal project'], ...customers.map((c: any) => [c.id, c.name])]} />}
+      {!edit.is_template && <Select label="Client" id="pj-cust" value={edit.customer_id} onChange={set('customer_id')} options={[['', 'Internal project'], ...customers.map((c: any) => [c.id, c.name]), [NEW_CLIENT, '+ Add a new client…']]} />}
+      {!edit.is_template && edit.customer_id === NEW_CLIENT && <>
+        <Field label="New client name" id="pj-nc-name" value={edit.new_client_name || ''} onChange={set('new_client_name')} required placeholder="e.g. Ghana Grid Company Ltd" />
+        <Field label="Client phone" id="pj-nc-phone" value={edit.new_client_phone || ''} onChange={set('new_client_phone')} />
+        <Field label="Client email" id="pj-nc-email" type="email" value={edit.new_client_email || ''} onChange={set('new_client_email')} />
+        <Field label="Client TIN" id="pj-nc-tin" value={edit.new_client_tin || ''} onChange={set('new_client_tin')} />
+      </>}
       <Select label="Billing" id="pj-bill" value={edit.billing_type} onChange={set('billing_type')} options={BILLING} />
       {!edit.is_template && team && <Select label="Project manager" id="pj-pm" value={edit.manager_id || ''} onChange={set('manager_id')} options={[['', '—'], ...team.map((t: any) => [t.user_id, t.email])]} />}
       <Field label="Start" id="pj-start" type="date" value={edit.start_date} onChange={set('start_date')} />
@@ -49,6 +56,15 @@ function ProjectForm({ edit, setEdit, customers, currencies, team, onClose, onSa
   </FormModal>;
 }
 
+const NEW_CLIENT = '__new_client';
+/** A client typed into the project form is saved as a customer first, so it shows on the project, quotes and invoices. */
+async function withClient(e: any, cid: string) {
+  if (e.customer_id !== NEW_CLIENT) return e;
+  const name = (e.new_client_name || '').trim();
+  if (!name) throw new Error('Enter the new client\'s name, or choose a client from the list');
+  const c = await q<any>(supabase.from('customers').insert({ company_id: cid, name, phone: e.new_client_phone || null, email: e.new_client_email || null, tin: e.new_client_tin || null }).select('id').single() as any);
+  return { ...e, customer_id: c.id };
+}
 const toRow = (e: any) => ({ name: e.name, customer_id: e.customer_id || null, ...(e.id ? {} : { status: e.status === 'active' ? 'active' : 'planned' }), start_date: e.start_date || null, end_date: e.end_date || null,
   hourly_rate: Number(e.hourly_rate) || 0, description: e.description || null, currency: e.currency || 'GHS', location: e.location || null, country: e.country || null,
   billing_type: e.billing_type, contract_value: Number(e.contract_value) || 0, is_template: !!e.is_template,
@@ -132,7 +148,7 @@ export function ProjectsPage() {
     </table></div> : <Empty>No templates yet. A template holds a standard task plan with estimates and dependencies, a budget and billing milestones. New projects copy it with dates shifted.</Empty>}</Panel>}
 
     {edit && <ProjectForm edit={edit} setEdit={setEdit} customers={data?.customers || []} currencies={currencies} team={null} busy={act.busy} onClose={() => setEdit(null)}
-      onSave={() => act.run(async () => { const r = await q<any>(supabase.from('projects').insert({ ...toRow(edit), company_id: cid }).select('id').single() as any); setEdit(null); nav('/projects/' + r.id); }, edit.is_template ? 'Template created — add its tasks, budget and milestones' : 'Project created')} />}
+      onSave={() => act.run(async () => { const r = await q<any>(supabase.from('projects').insert({ ...toRow(await withClient(edit, cid)), company_id: cid }).select('id').single() as any); setEdit(null); nav('/projects/' + r.id); }, edit.is_template ? 'Template created — add its tasks, budget and milestones' : 'Project created')} />}
     {fromTpl && data && <FormModal title="New project from template" submit="Create project" busy={act.busy} onClose={() => setFromTpl(null)}
       onSave={() => act.run(async () => { const id = await rpc<string>('create_project_from_template', { p_template: fromTpl.template, p_name: fromTpl.name, p_customer: fromTpl.customer_id || null, p_start: fromTpl.start, p_sales_order: null }); nav('/projects/' + id); }, 'Project created from template')}>
       <Select label="Template" id="ft-tpl" value={fromTpl.template} onChange={v => setFromTpl({ ...fromTpl, template: v })} options={data.templates.map(t => [t.id, t.name])} />
@@ -147,8 +163,8 @@ export function ProjectsPage() {
 }
 
 // ---------------------------------------------------------------- One project
-type Tab = 'overview' | 'plan' | 'budget' | 'progress' | 'purchases' | 'materials' | 'team' | 'time' | 'billing' | 'issues' | 'documents';
-const TABS: [Tab, string][] = [['overview', 'Overview'], ['plan', 'Plan'], ['budget', 'Budget'], ['progress', 'Progress & meetings'], ['purchases', 'Purchases'], ['materials', 'Materials & site store'], ['team', 'Team'], ['time', 'Time & expenses'], ['billing', 'Billing'], ['issues', 'Issues & risks'], ['documents', 'Documents']];
+type Tab = 'overview' | 'plan' | 'budget' | 'progress' | 'purchases' | 'materials' | 'team' | 'time' | 'billing' | 'issues' | 'documents' | 'safety';
+const TABS: [Tab, string][] = [['overview', 'Overview'], ['plan', 'Plan'], ['budget', 'Budget'], ['progress', 'Progress & meetings'], ['purchases', 'Purchases'], ['materials', 'Materials & site store'], ['team', 'Team'], ['time', 'Time & expenses'], ['billing', 'Billing'], ['issues', 'Issues & risks'], ['safety', 'Safety'], ['documents', 'Documents']];
 
 export function ProjectView() {
   const { id } = useParams();
@@ -225,7 +241,7 @@ export function ProjectView() {
 
   return <>
     <PageHead title={(tpl ? 'Template: ' : '') + p.name} sub={<>{!tpl && <><span className="num muted">{p.number}</span> <Stage s={p.status} /> <Health h={p.health} /> </>}
-      <span className="muted">· {p.customer?.name || (tpl ? 'Template' : 'Internal')} · {BILLING.find(b => b[0] === p.billing_type)?.[1]} in {p.currency}{p.manager_id ? ' · PM ' + (team?.find(t => t.user_id === p.manager_id)?.email.split('@')[0] || '') : ''}</span></>}>
+      <span className="muted">· {p.customer?.name || (tpl ? 'Template' : 'Internal')}{p.location || p.country ? ' · ' + [p.location, p.country].filter(Boolean).join(', ') : ''} · {BILLING.find(b => b[0] === p.billing_type)?.[1]} in {p.currency}{p.manager_id ? ' · PM ' + (team?.find(t => t.user_id === p.manager_id)?.email.split('@')[0] || '') : ''}</span></>}>
       <Link className="btn" to="/projects">Back</Link>
       {!tpl && <button className="btn" type="button" onClick={report}>Status report PDF</button>}
       {manage && <button className="btn" type="button" onClick={() => setEdit({ ...p, customer_id: p.customer?.id || '', start_date: p.start_date || '', end_date: p.end_date || '', description: p.description || '', location: p.location || '', country: p.country || '', manager_id: p.manager_id || '' })}>Edit</button>}
@@ -388,6 +404,7 @@ export function ProjectView() {
       </table></div></Panel>}
     </>}
 
+    {tab === 'safety' && !tpl && <ProjectSafety p={p} />}
     {tab === 'issues' && <Panel title="Issues, risks and change requests" actions={<>
       <Downloads csv={() => downloadCsv(`issues-${p.name}`, ['Type', 'Title', 'Severity', 'Status', 'Assigned', 'Due', 'Resolution'], issues.map(i => [i.kind, i.title, i.severity, i.status, who(i.assignee_id), i.due_date || '', i.resolution || '']))} />
       <button className="btn small primary" type="button" onClick={() => setIssue({ kind: 'issue', title: '', description: '', severity: 'medium', status: 'open', assignee_id: '', due_date: '', task_id: '', resolution: '' })}>Log issue or risk</button></>}>
@@ -406,7 +423,7 @@ export function ProjectView() {
     {tab === 'documents' && <ProjectDocuments p={p} manage={!!manage} tasks={tasks} team={team} templateOnly={tpl} />}
 
     {edit && <ProjectForm edit={edit} setEdit={setEdit} customers={customers} currencies={currencies} team={tpl ? null : team} busy={act.busy} onClose={() => setEdit(null)}
-      onSave={() => act.run(async () => { await q(supabase.from('projects').update(toRow(edit)).eq('id', id) as any); setEdit(null); reload(); }, 'Saved')} />}
+      onSave={() => act.run(async () => { await q(supabase.from('projects').update(toRow(await withClient(edit, cid))).eq('id', id) as any); setEdit(null); reload(); }, 'Saved')} />}
     {billTo && <FormModal title={`Invoice ${p.name}`} submit="Create draft invoice" busy={act.busy} onClose={() => setBillTo(null)}
       onSave={() => act.run(async () => { const inv = await rpc<string>('invoice_project', { p_project: id, p_to: billTo }); nav(`/invoices/${inv}/edit`); }, 'Draft invoice created')}>
       <p className="muted" style={{ margin: 0 }}>Bills approved, unbilled hours (hours × each person's bill rate), re-billable expenses, materials from the store marked "bill client" (less returns) and supplier costs marked "re-bill" up to this date, in {p.currency}.</p>
