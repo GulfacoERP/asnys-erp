@@ -19,10 +19,12 @@ export const MODULES: Module[] = [
     { to: '/crm-dashboard', label: 'CRM dashboard' }, { to: '/crm', label: 'Leads & pipeline' }, { to: '/activities', label: 'Activities & visits' },
     { to: '/sales-performance', label: 'Performance & forecast' }, { to: '/campaigns', label: 'Campaigns' }, { to: '/partners', label: 'Partners' },
     { to: '/commissions', label: 'Commissions', roles: ['sales', 'accountant'] }] },
-  { id: 'hr', name: 'HR', blurb: 'Employees, leave, payroll, recruitment and training', hue: '#8a4fb3', pages: [
+  { id: 'hr', name: 'HR', blurb: 'Employees, payroll, leave, onboarding, policies and HR reports', hue: '#8a4fb3', pages: [
     { to: '/employees', label: 'Employees', roles: ['hr', 'accountant'] }, { to: '/leave', label: 'Leave' },
     { to: '/payroll', label: 'Payroll', roles: ['hr', 'accountant'] }, { to: '/recruitment', label: 'Recruitment', roles: ['hr', 'accountant'] },
-    { to: '/appraisals', label: 'Appraisals', roles: ['hr', 'accountant'] }, { to: '/training', label: 'Training' }] },
+    { to: '/appraisals', label: 'Appraisals', roles: ['hr', 'accountant'] }, { to: '/training', label: 'Training' },
+    { to: '/hr-tasks', label: 'Joining & leaving' }, { to: '/org-chart', label: 'Org chart' }, { to: '/announcements', label: 'Announcements' },
+    { to: '/hse/policies', label: 'Policies' }, { to: '/hr-reports', label: 'HR reports', roles: ['hr', 'accountant'] }] },
   { id: 'inventory', name: 'Inventory', blurb: 'Items, stores, site requests, transfers and counts', hue: '#a87512', pages: [
     { to: '/inventory', label: 'Items & stock', also: ['/inventory/items'] }, { to: '/inventory/issues', label: 'Issues to projects', roles: ['accountant', 'store', 'project_manager'] },
     { to: '/inventory/requests', label: 'Requests from sites', roles: ['accountant', 'store', 'project_manager'] },
@@ -53,8 +55,8 @@ export const MODULES: Module[] = [
     { to: '/hse', label: 'Overview' }, { to: '/hse/incidents', label: 'Incidents' }, { to: '/hse/actions', label: 'Actions' },
     { to: '/hse/talks', label: 'Talks & inductions', also: ['/hse/inductions'] }, { to: '/hse/inspections', label: 'Inspections' }, { to: '/hse/permits', label: 'Permits' }, { to: '/hse/risks', label: 'Risks' },
     { to: '/hse/obligations', label: 'Compliance' }, { to: '/hse/policies', label: 'Policies' }, { to: '/hse/sustainability', label: 'Sustainability' }] },
-  { id: 'mywork', name: 'My work', blurb: 'Time, expenses, requests, advances and approvals', hue: '#1d6b55', pages: [
-    { to: '/my', label: 'My time & expenses' }, { to: '/requests', label: 'Requests' }, { to: '/advances', label: 'Cash advances' }, { to: '/petty-cash', label: 'Petty cash' },
+  { id: 'mywork', name: 'My work', blurb: 'Payslips, time, expenses, leave, requests and approvals', hue: '#1d6b55', pages: [
+    { to: '/my', label: 'My time & expenses' }, { to: '/my/payslips', label: 'My payslips' }, { to: '/my/profile', label: 'My profile' }, { to: '/requests', label: 'Requests' }, { to: '/advances', label: 'Cash advances' }, { to: '/petty-cash', label: 'Petty cash' },
     { to: '/approvals-inbox', label: 'Waiting for my approval' }, { to: '/notifications', label: 'Notifications' }] },
 ];
 

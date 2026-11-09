@@ -20,6 +20,7 @@ import { RecurringPage } from './pages/Recurring';
 import { RecruitmentPage, AppraisalsPage } from './pages/Recruitment';
 import { BankRecPage, BudgetsPage } from './pages/Banking';
 import { AssetsPage, AssetView } from './pages/Assets';
+import { AnnouncementsPage, EmployeeProfilePage, HrReportsPage, HrTasksPage, MyPayslipsPage, MyProfilePage, OrgChartPage, PayComponentsPage } from './pages/People';
 import { HseActionsPage, HseDashboardPage, HseIncidentView, HseIncidentsPage, HseInspectionView, HseInspectionsPage, HseObligationsPage, HsePermitsPage, HsePoliciesPage, HseRisksPage, HseSustainabilityPage, HseSessionsPage, HseSessionView, HseInductionsPage } from './pages/Hse';
 import { CrmPage, ActivitiesPage, SalesPerformancePage } from './pages/CRM';
 import { ResourcesPage } from './pages/Resources';
@@ -166,7 +167,15 @@ function Shell() {
           <Route path="/employees" element={<EmployeesPage />} />
           <Route path="/leave" element={<LeavePage />} />
           <Route path="/payroll" element={<PayrollPage />} />
+          <Route path="/payroll/components" element={<PayComponentsPage />} />
           <Route path="/payroll/:id" element={<PayrollRunPage />} />
+          <Route path="/employees/:id" element={<EmployeeProfilePage />} />
+          <Route path="/org-chart" element={<OrgChartPage />} />
+          <Route path="/announcements" element={<AnnouncementsPage />} />
+          <Route path="/hr-reports" element={<HrReportsPage />} />
+          <Route path="/hr-tasks" element={<HrTasksPage />} />
+          <Route path="/my/payslips" element={<MyPayslipsPage />} />
+          <Route path="/my/profile" element={<MyProfilePage />} />
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/projects/:id" element={<ProjectView />} />
           <Route path="/settings" element={<SettingsPage />} />
