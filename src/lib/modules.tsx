@@ -41,9 +41,15 @@ export const MODULES: Module[] = [
     { to: '/contracts/securities', label: 'Bonds & guarantees', roles: ['accountant', 'sales', 'project_manager'] },
     { to: '/contracts/obligations', label: 'Key dates & obligations', roles: ['accountant', 'sales', 'project_manager'] },
     { to: '/tenders', label: 'Tenders', roles: ['accountant', 'sales', 'project_manager'] }] },
-  { id: 'assets', name: 'Assets', blurb: 'Asset register, check-out, audits, requests and upkeep', hue: '#3a6f8f', pages: [
-    { to: '/assets', label: 'Asset register' }, { to: '/assets/requests', label: 'Requests' }, { to: '/assets/audits', label: 'Audits' },
-    { to: '/assets/maintenance', label: 'Maintenance' }, { to: '/assets/movements', label: 'Movements' }] },
+  { id: 'assets', name: 'Assets', blurb: 'Register, locations, transfers, requests, consumables, licences and audits', hue: '#3a6f8f', pages: [
+    { to: '/assets', label: 'Asset register', also: ['/assets/import'] }, { to: '/assets/locations', label: 'Locations' }, { to: '/assets/transfers', label: 'Transfers' },
+    { to: '/assets/requests', label: 'Requests' }, { to: '/assets/items', label: 'Consumables' }, { to: '/assets/licences', label: 'Licences' },
+    { to: '/assets/audits', label: 'Audits' }, { to: '/assets/maintenance', label: 'Maintenance' }, { to: '/assets/warranty', label: 'Warranty' },
+    { to: '/assets/movements', label: 'Movements' }, { to: '/assets/alerts', label: 'Alerts', roles: ['owner'] }] },
+  { id: 'fleet', name: 'Fleet & Logistics', blurb: 'Vehicles and papers, drivers, trips, fuel, service, vehicle requests and waybills', hue: '#0e6e8c', pages: [
+    { to: '/fleet', label: 'Vehicles', also: ['/fleet/vehicles'] }, { to: '/fleet/requests', label: 'Vehicle requests' }, { to: '/fleet/trips', label: 'Trips' },
+    { to: '/fleet/fuel', label: 'Fuel' }, { to: '/fleet/service', label: 'Service & repairs' }, { to: '/fleet/waybills', label: 'Waybills' },
+    { to: '/fleet/drivers', label: 'Drivers' }, { to: '/fleet/reports', label: 'Reports' }] },
   { id: 'purchasing', name: 'Purchasing', blurb: 'Purchase orders, supplier bills and suppliers', hue: '#5d6b2f', pages: [
     { to: '/purchase-orders', label: 'Purchase orders', roles: ['accountant', 'store', 'project_manager'] },
     { to: '/bills', label: 'Supplier bills', roles: ['accountant'] }, { to: '/suppliers', label: 'Suppliers' }] },
@@ -94,6 +100,7 @@ export function ModuleIcon({ id, size = 26 }: { id: string; size?: number }) {
     case 'settings': return <svg {...p}><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></svg>;
     case 'contracts': return <svg {...p}><path d="M14 3H6.5A1.5 1.5 0 0 0 5 4.5v15A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V8z" /><path d="M14 3v5h5M8.5 12.5h7M8.5 16h3.5" /><path d="M13.5 18.5c1-1.6 1.8-1.6 2.3-.4.3.7.9.7 1.7-.2" /></svg>;
     case 'assets': return <svg {...p}><rect x="3" y="6" width="18" height="12" rx="2" /><path d="M7 10v4M10 10v4M12.5 10v4M16 10v4M18 10v4" /><path d="M8 3.5h8" /></svg>;
+    case 'fleet': return <svg {...p}><path d="M2.5 7h10v9h-10z" /><path d="M12.5 10h4.2l2.8 3v3h-7z" /><circle cx="6.5" cy="17.5" r="1.8" /><circle cx="16.5" cy="17.5" r="1.8" /></svg>;
     case 'hse': return <svg {...p}><path d="M12 2.8l7.5 3v5.6c0 4.6-3.1 8.5-7.5 9.8-4.4-1.3-7.5-5.2-7.5-9.8V5.8z" /><path d="M8.6 12.2l2.3 2.3 4.6-4.8" /></svg>;
     case 'mywork': return <svg {...p}><circle cx="12" cy="8" r="3.5" /><path d="M5 20.5c.7-3.6 3.4-5.5 7-5.5s6.3 1.9 7 5.5" /><path d="M17.5 3.5l1.2 1.2 2.3-2.3" /></svg>;
     case 'grid': return <svg {...p}><rect x="4" y="4" width="6" height="6" rx="1.2" /><rect x="14" y="4" width="6" height="6" rx="1.2" /><rect x="4" y="14" width="6" height="6" rx="1.2" /><rect x="14" y="14" width="6" height="6" rx="1.2" /></svg>;
