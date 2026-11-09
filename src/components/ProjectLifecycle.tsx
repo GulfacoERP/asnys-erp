@@ -22,6 +22,7 @@ export function schedule(p: { status: string; start_date?: string | null; end_da
     return { planned: 100, actual: 100, label: late > 0 ? `Finished ${late} day${late === 1 ? '' : 's'} late` : late < 0 ? `Finished ${-late} day${late === -1 ? '' : 's'} early` : 'Finished on time', tone: late > 0 ? 'warn' : 'good' };
   }
   if (p.status === 'cancelled') return null;
+  if (p.status === 'on_hold') return { planned: 0, actual: pct, label: 'On hold', tone: 'warn' };
   if (p.status === 'planned') {
     const d = days(t, p.start_date || start);
     return { planned: 0, actual: pct, label: d > 0 ? `Starts in ${d} day${d === 1 ? '' : 's'}` : `Should have started ${-d} day${d === -1 ? '' : 's'} ago`, tone: d >= 0 ? '' : 'bad' };
@@ -41,21 +42,21 @@ export function ScheduleBar({ planned, actual }: { planned: number; actual: numb
 
 type Action = { key: string; label: string; primary?: boolean; note?: 'required' | 'optional'; date?: boolean; acctOnly?: boolean };
 const ACTIONS: Record<string, Action[]> = {
-  planned: [{ key: 'start', label: 'Start project', primary: true, date: true }, { key: 'cancel', label: 'Cancel project', note: 'required' }],
+  planned: [{ key: 'start', label: 'Start project', primary: true, date: true }, { key: 'hold', label: 'Put on hold', note: 'required' }, { key: 'cancel', label: 'Cancel project', note: 'required' }],
   active: [{ key: 'complete', label: 'Mark work complete', primary: true, date: true, note: 'optional' }, { key: 'hold', label: 'Put on hold', note: 'required' }, { key: 'cancel', label: 'Cancel', note: 'required' }],
-  on_hold: [{ key: 'resume', label: 'Resume work', primary: true, note: 'optional' }, { key: 'complete', label: 'Mark work complete', date: true, note: 'optional' }, { key: 'cancel', label: 'Cancel', note: 'required' }],
+  on_hold: [{ key: 'resume', label: 'Resume work', primary: true, note: 'optional' }, { key: 'hold_review', label: 'Change review date' }, { key: 'complete', label: 'Mark work complete', date: true, note: 'optional' }, { key: 'cancel', label: 'Cancel', note: 'required' }],
   done: [{ key: 'close', label: 'Close project', primary: true, note: 'optional' }, { key: 'resume_work', label: 'More work needed', note: 'optional' }],
   closed: [{ key: 'reopen', label: 'Reopen', note: 'required', acctOnly: true }],
   cancelled: [{ key: 'reopen', label: 'Reopen', note: 'required', acctOnly: true }],
 };
-const DONE_MSG: Record<string, string> = { start: 'Project started', hold: 'Project on hold', resume: 'Work resumed', complete: 'Work marked complete. Close the project once everything is billed and paid for.', resume_work: 'Back in progress', close: 'Project closed. Nothing more can be booked to it.', reopen: 'Project reopened', cancel: 'Project cancelled' };
+const DONE_MSG: Record<string, string> = { start: 'Project started', hold: 'Project on hold', hold_review: 'Review date saved', resume: 'Work resumed', complete: 'Work marked complete. Close the project once everything is billed and paid for.', resume_work: 'Back in progress', close: 'Project closed. Nothing more can be booked to it.', reopen: 'Project reopened', cancel: 'Project cancelled' };
 
 /** Stage, schedule, start/hold/complete/close actions, close-out checklist and status history for one project. */
 export function ProjectLifecycle({ p, k, manage, onChange }: { p: any; k: any; manage: boolean; onChange: () => void }) {
   const { can } = useSession();
   const act = useAction();
   const acct = can('accountant');
-  const [doing, setDoing] = useState<{ a: Action; note: string; date: string; force: boolean } | null>(null);
+  const [doing, setDoing] = useState<{ a: Action; note: string; date: string; force: boolean; review?: string } | null>(null);
   const [history, setHistory] = useState(false);
   const { data, reload } = useLoad(async () => {
     const [check, log, docs] = await Promise.all([
@@ -70,15 +71,17 @@ export function ProjectLifecycle({ p, k, manage, onChange }: { p: any; k: any; m
   const blocks = (data?.check || []).filter(c => c.severity === 'block');
   const warns = (data?.check || []).filter(c => c.severity === 'warn');
   const steps = ['planned', 'active', 'done', 'closed'];
-  const idx = p.status === 'on_hold' ? 1 : p.status === 'cancelled' ? -1 : steps.indexOf(p.status);
-  const actions = (ACTIONS[p.status] || []).filter(a => (manage || acct) && (!a.acctOnly || acct));
+  const heldBeforeStart = p.status === 'on_hold' && !p.actual_start;
+  const idx = p.status === 'on_hold' ? (heldBeforeStart ? 0 : 1) : p.status === 'cancelled' ? -1 : steps.indexOf(p.status);
+  const actions = (ACTIONS[p.status] || []).filter(a => (manage || acct) && (!a.acctOnly || acct) && !(heldBeforeStart && a.key === 'complete'));
+  const reviewDue = p.status === 'on_hold' && p.hold_review && p.hold_review <= today();
 
   return <Panel title={<div className="actions"><h2>Project stage</h2><Stage s={p.status} /></div>}
-    actions={<>{actions.map(a => <button key={a.key} type="button" className={'btn small' + (a.primary ? ' primary' : '')} onClick={() => setDoing({ a, note: '', date: today(), force: false })}>{a.label}</button>)}
+    actions={<>{actions.map(a => <button key={a.key} type="button" className={'btn small' + (a.primary ? ' primary' : '')} onClick={() => setDoing({ a, note: '', date: today(), force: false, review: a.key === 'hold_review' ? (p.hold_review || '') : '' })}>{a.label}</button>)}
       <button type="button" className="btn small ghost" onClick={() => setHistory(!history)}>{history ? 'Hide history' : 'History'}</button></>}>
     <div className="body" style={{ display: 'grid', gap: 14 }}>
       <ol className="stepper" aria-label="Project stages">
-        {steps.map((s, i) => <li key={s} className={i < idx ? 'done' : i === idx ? 'now' : ''}><span>{i + 1}</span>{p.status === 'on_hold' && s === 'active' ? 'On hold' : STAGES.find(x => x[0] === s)?.[1]}</li>)}
+        {steps.map((s, i) => <li key={s} className={i < idx ? 'done' : i === idx ? 'now' : ''}><span>{i + 1}</span>{p.status === 'on_hold' && s === (heldBeforeStart ? 'planned' : 'active') ? 'On hold' : STAGES.find(x => x[0] === s)?.[1]}</li>)}
       </ol>
       <div className="grid-form" style={{ alignItems: 'center' }}>
         <div><div className="label">Planned</div><span className="num">{longDate(p.start_date) || '—'} → {longDate(p.end_date) || '—'}</span></div>
@@ -87,6 +90,10 @@ export function ProjectLifecycle({ p, k, manage, onChange }: { p: any; k: any; m
           <span className="muted" style={{ fontSize: 12 }}>{['done', 'closed'].includes(p.status) ? `Target end ${longDate(p.end_date)}` : `${pct}% complete; should be ${sch.planned}% by today`}</span></div>
           : <div className="muted" style={{ fontSize: 13 }}>Set a start and target end date to track the schedule.</div>}
       </div>
+      {p.status === 'on_hold' && <div className="note" style={{ background: reviewDue ? 'var(--bad-soft, var(--warn-soft))' : 'var(--warn-soft)' }}>
+        <b>On hold {p.hold_review ? `— review on ${longDate(p.hold_review)}` : 'until further notice'}</b>{p.hold_since ? ` · since ${longDate(p.hold_since)}` : ''}{p.hold_reason ? `. Reason: ${p.hold_reason}` : ''}.
+        {reviewDue ? ' The review date has arrived: resume work, set a new review date, or cancel.' : ''}
+        <br /><span style={{ fontSize: 13 }}>New time, expense claims, requests, advances, purchase orders and stock issues are paused for the project team. Finance can still book costs that must be paid, and unused stock can be returned to the store.</span></div>}
       {p.status === 'done' && data && <div className="note" style={{ background: blocks.length ? 'var(--warn-soft)' : 'var(--good-soft)' }}>
         {blocks.length ? <>Before closing: {blocks.map(b => b.item.toLowerCase() + ` (${b.n})`).join('; ')}.</> : <>Ready to close.{warns.length ? ' Worth checking: ' + warns.map(w => w.item.toLowerCase() + ` (${w.n})`).join('; ') + '.' : ''}</>}</div>}
       {p.status === 'closed' && <div className="note">Closed {p.closed_at ? longDate(p.closed_at) : ''}{p.close_notes ? ': ' + p.close_notes : ''}. Time, expenses, purchases and materials can no longer be booked to it.</div>}
@@ -97,7 +104,7 @@ export function ProjectLifecycle({ p, k, manage, onChange }: { p: any; k: any; m
 
     {doing && <FormModal title={doing.a.label} submit={doing.a.label} busy={act.busy} onClose={() => setDoing(null)}
       onSave={() => act.run(async () => {
-        await rpc('set_project_status', { p_project: p.id, p_action: doing.a.key, p_note: doing.note || null, p_date: doing.date, p_force: doing.force });
+        await rpc('set_project_status', { p_project: p.id, p_action: doing.a.key, p_note: doing.note || null, p_date: doing.date, p_force: doing.force, p_review: doing.review || null });
         setDoing(null); reload(); onChange();
       }, DONE_MSG[doing.a.key])}>
       {doing.a.key === 'close' && data && <>
@@ -112,6 +119,10 @@ export function ProjectLifecycle({ p, k, manage, onChange }: { p: any; k: any; m
       {doing.a.key === 'start' && <p className="muted" style={{ margin: 0 }}>The actual start date is recorded and the schedule is tracked from it.</p>}
       {doing.a.key === 'start' && data && data.docs.some(d => d.stage === 'start' && !d.satisfied) && <div className="note" style={{ background: 'var(--warn-soft)' }}>
         Not yet approved before start: {data.docs.filter(d => d.stage === 'start' && !d.satisfied).map(d => d.name).join(', ')}. You can still start, but work should not begin without them.</div>}
+      {(doing.a.key === 'hold' || doing.a.key === 'hold_review') && <>
+        <Field label="Review date (optional)" id="lc-review" type="date" min={today()} value={doing.review || ''} onChange={v => setDoing({ ...doing, review: v })} />
+        <p className="muted" style={{ margin: 0, fontSize: 13 }}>Leave the date blank to keep the project on hold <b>until further notice</b>. With a date, the project manager and Finance are reminded on that day.
+          {doing.a.key === 'hold' ? ' While on hold, the project team cannot book new time, claims, requests, orders or stock to it.' : ''}</p></>}
       {doing.a.date && <Field label={doing.a.key === 'start' ? 'Actual start date' : 'Date the work finished'} id="lc-date" type="date" value={doing.date} onChange={v => setDoing({ ...doing, date: v })} required />}
       {doing.a.note && <Field label={doing.a.note === 'required' || doing.force ? 'Reason (required)' : 'Note (optional)'} id="lc-note" type="textarea" value={doing.note} onChange={v => setDoing({ ...doing, note: v })}
         placeholder={doing.a.key === 'hold' ? 'e.g. Waiting for the client\'s drawings' : doing.a.key === 'close' ? 'e.g. Handed over and signed off by the client' : ''} />}
