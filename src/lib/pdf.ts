@@ -362,20 +362,29 @@ export function statementPdf(o: { company: Company; party: any; kind: 'customer'
 // ---------------------------------------------------------------- Payroll
 
 function payslipPage(doc: jsPDF, c: Company, period: string, s: any, e: any) {
-  let y = header(doc, c, 'Payslip', [['Period', monthName(period)], ['Staff no.', e.staff_no || '—']]);
-  y = block(doc, 'Employee', [e.full_name, [e.job_title, e.department].filter(Boolean).join(', '), e.ssnit_no ? 'SSNIT ' + e.ssnit_no : null, e.ghana_card ? 'Ghana Card ' + e.ghana_card : null], M, y) + 14;
+  const kind = s.run_kind || s.kind;
+  let y = header(doc, c, kind === 'interim' ? 'Payslip (off-cycle)' : kind === 'final' ? 'Final payslip' : 'Payslip', [['Period', monthName(period)], ['Staff no.', e.staff_no || '—']]);
+  y = block(doc, 'Employee', [e.full_name, [e.job_title, e.department].filter(Boolean).join(', '), e.ssnit_no ? 'SSNIT ' + e.ssnit_no : null, e.ghana_card ? 'Ghana Card ' + e.ghana_card : null, e.tin ? 'TIN ' + e.tin : null], M, y) + 14;
   const n = (k: string) => Number(s[k] || 0);
+  const items: any[] = s.items || [];
+  const earnItems = items.filter(i => i.kind === 'earning' && i.code !== 'BONUS');
+  const dedItems = items.filter(i => i.kind === 'deduction');
+  const part = s.days_paid != null && s.days_in_month && Number(s.days_paid) < Number(s.days_in_month);
   table(doc, { ...tableStyle, startY: y, head: [['Earnings', 'GHS']],
-    body: [['Basic salary', money(s.basic)], ['Allowances', money(s.allowances)],
+    body: [...(n('basic') || !items.length ? [[part ? `Basic salary (${Number(s.days_paid)} of ${s.days_in_month} days)` : 'Basic salary', money(s.basic)]] : []),
+      ...(n('allowances') ? [['Allowances', money(s.allowances)]] : []),
+      ...earnItems.map(i => [i.name + (i.taxable ? '' : ' (not taxed)'), money(i.amount)]),
       ...(n('overtime') ? [['Overtime', money(s.overtime)]] : []), ...(n('bonus') ? [['Bonus', money(s.bonus)]] : [])],
     foot: [['Gross pay', money(s.gross)]], columnStyles: { 1: { halign: 'right' } } });
-  const ded: string[][] = [['SSNIT employee 5.5% of basic', money(s.ssnit_employee)]];
+  const ded: string[][] = [];
+  if (n('ssnit_employee')) ded.push([`SSNIT employee 5.5% of basic${n('backpay') ? ' (incl. arrears)' : ''}`, money(s.ssnit_employee)]);
   if (n('tier3_employee')) ded.push(['Tier 3 voluntary pension', money(s.tier3_employee)]);
   ded.push([`PAYE on chargeable income of ${money(s.chargeable)}`, money(s.paye)]);
   if (n('overtime_tax')) ded.push(['Overtime tax (5% / 10% final tax)', money(s.overtime_tax)]);
   if (n('bonus_tax')) ded.push(['Bonus tax (5% final tax)', money(s.bonus_tax)]);
+  dedItems.forEach(i => ded.push([i.name, money(i.amount)]));
   if (n('loan_deduction')) ded.push(['Staff loan repayment', money(s.loan_deduction)]);
-  const totalDed = ['ssnit_employee', 'tier3_employee', 'paye', 'overtime_tax', 'bonus_tax', 'loan_deduction'].reduce((a, k) => a + n(k), 0);
+  const totalDed = ['ssnit_employee', 'tier3_employee', 'paye', 'overtime_tax', 'bonus_tax', 'loan_deduction', 'deductions_other'].reduce((a, k) => a + n(k), 0);
   table(doc, { ...tableStyle, startY: endY(doc) + 14, head: [['Deductions', 'GHS']], body: ded,
     foot: [['Total deductions', money(totalDed)]], columnStyles: { 1: { halign: 'right' } } });
   y = totals(doc, [['Net pay (GHS)', money(s.net), true]], endY(doc) + 24);
@@ -386,7 +395,7 @@ function payslipPage(doc: jsPDF, c: Company, period: string, s: any, e: any) {
   y = endY(doc) + 16;
   const pay = [e.bank_name && e.bank_account ? `${e.bank_name} ${e.bank_account}` : null, e.momo_number ? 'MoMo ' + e.momo_number : null].filter(Boolean).join(' · ');
   if (pay) y = note(doc, 'Paid to: ' + pay, y);
-  note(doc, 'PAYE computed with the monthly resident bands of the Income Tax (Amendment) Act, 2026 (Act 1178).', y);
+  note(doc, 'PAYE computed with the monthly resident bands of the Income Tax (Amendment) Act, 2026 (Act 1178).' + (kind && kind !== 'regular' ? ' PAYE on this payslip is worked out on the month\'s total pay, less tax already deducted this month.' : ''), y);
 }
 
 export function payslipPdf(c: Company, period: string, slip: any, emp: any) {

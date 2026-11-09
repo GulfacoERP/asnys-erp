@@ -18,7 +18,22 @@ try {
   }
 } catch { /* storage unavailable */ }
 
-export const supabase = createClient(url || 'https://missing.supabase.co', key || 'missing');
+/** Tabs share one sign-in lock. If another tab has held it for 5 seconds (a stuck or sleeping tab), take it over
+ *  instead of waiting forever, which left the app on "Loading…". */
+const lock = async <R,>(name: string, _timeout: number, fn: () => Promise<R>): Promise<R> => {
+  const locks = typeof navigator !== 'undefined' ? (navigator as any).locks : null;
+  if (!locks?.request) return fn();
+  const ac = new AbortController();
+  const t = setTimeout(() => ac.abort(), 5000);
+  try {
+    return await locks.request(name, { mode: 'exclusive', signal: ac.signal }, async () => { clearTimeout(t); return fn(); });
+  } catch (e: any) {
+    clearTimeout(t);
+    if (e?.name === 'AbortError') return locks.request(name, { steal: true }, fn);
+    throw e;
+  }
+};
+export const supabase = createClient(url || 'https://missing.supabase.co', key || 'missing', { auth: { lock } });
 
 /** Unwraps a Supabase response, throwing its message so screens can show it. */
 export async function q<T = any>(p: PromiseLike<{ data: T; error: { message: string } | null }>): Promise<T> {

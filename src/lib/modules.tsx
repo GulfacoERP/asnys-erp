@@ -19,10 +19,12 @@ export const MODULES: Module[] = [
     { to: '/crm-dashboard', label: 'CRM dashboard' }, { to: '/crm', label: 'Leads & pipeline' }, { to: '/activities', label: 'Activities & visits' },
     { to: '/sales-performance', label: 'Performance & forecast' }, { to: '/campaigns', label: 'Campaigns' }, { to: '/partners', label: 'Partners' },
     { to: '/commissions', label: 'Commissions', roles: ['sales', 'accountant'] }] },
-  { id: 'hr', name: 'HR', blurb: 'Employees, leave, payroll, recruitment and training', hue: '#8a4fb3', pages: [
+  { id: 'hr', name: 'HR', blurb: 'Employees, payroll, leave, onboarding, policies and HR reports', hue: '#8a4fb3', pages: [
     { to: '/employees', label: 'Employees', roles: ['hr', 'accountant'] }, { to: '/leave', label: 'Leave' },
     { to: '/payroll', label: 'Payroll', roles: ['hr', 'accountant'] }, { to: '/recruitment', label: 'Recruitment', roles: ['hr', 'accountant'] },
-    { to: '/appraisals', label: 'Appraisals', roles: ['hr', 'accountant'] }, { to: '/training', label: 'Training' }] },
+    { to: '/appraisals', label: 'Appraisals', roles: ['hr', 'accountant'] }, { to: '/training', label: 'Training' },
+    { to: '/hr-tasks', label: 'Joining & leaving' }, { to: '/org-chart', label: 'Org chart' }, { to: '/announcements', label: 'Announcements' },
+    { to: '/hse/policies', label: 'Policies' }, { to: '/hr-reports', label: 'HR reports', roles: ['hr', 'accountant'] }] },
   { id: 'inventory', name: 'Inventory', blurb: 'Items, stores, site requests, transfers and counts', hue: '#a87512', pages: [
     { to: '/inventory', label: 'Items & stock', also: ['/inventory/items'] }, { to: '/inventory/issues', label: 'Issues to projects', roles: ['accountant', 'store', 'project_manager'] },
     { to: '/inventory/requests', label: 'Requests from sites', roles: ['accountant', 'store', 'project_manager'] },
@@ -49,8 +51,12 @@ export const MODULES: Module[] = [
     { to: '/cases', label: 'Support cases' }, { to: '/knowledge', label: 'Knowledge base' }] },
   { id: 'settings', name: 'Settings', blurb: 'Company details, team access and imports', hue: '#5b6670', pages: [
     { to: '/settings', label: 'Settings & team', roles: ['accountant', 'hr'] }, { to: '/import', label: 'Import from spreadsheet', roles: ['accountant', 'hr', 'sales'] }] },
-  { id: 'mywork', name: 'My work', blurb: 'Time, expenses, requests, advances and approvals', hue: '#1d6b55', pages: [
-    { to: '/my', label: 'My time & expenses' }, { to: '/requests', label: 'Requests' }, { to: '/advances', label: 'Cash advances' }, { to: '/petty-cash', label: 'Petty cash' },
+  { id: 'hse', name: 'HSE & Compliance', blurb: 'Incidents, permits, inspections, compliance register and sustainability', hue: '#c2410c', pages: [
+    { to: '/hse', label: 'Overview' }, { to: '/hse/incidents', label: 'Incidents' }, { to: '/hse/actions', label: 'Actions' },
+    { to: '/hse/talks', label: 'Talks & inductions', also: ['/hse/inductions'] }, { to: '/hse/inspections', label: 'Inspections' }, { to: '/hse/permits', label: 'Permits' }, { to: '/hse/risks', label: 'Risks' },
+    { to: '/hse/obligations', label: 'Compliance' }, { to: '/hse/policies', label: 'Policies' }, { to: '/hse/sustainability', label: 'Sustainability' }] },
+  { id: 'mywork', name: 'My work', blurb: 'Payslips, time, expenses, leave, requests and approvals', hue: '#1d6b55', pages: [
+    { to: '/my', label: 'My time & expenses' }, { to: '/my/payslips', label: 'My payslips' }, { to: '/my/profile', label: 'My profile' }, { to: '/requests', label: 'Requests' }, { to: '/advances', label: 'Cash advances' }, { to: '/petty-cash', label: 'Petty cash' },
     { to: '/approvals-inbox', label: 'Waiting for my approval' }, { to: '/notifications', label: 'Notifications' }] },
 ];
 
@@ -88,6 +94,7 @@ export function ModuleIcon({ id, size = 26 }: { id: string; size?: number }) {
     case 'settings': return <svg {...p}><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></svg>;
     case 'contracts': return <svg {...p}><path d="M14 3H6.5A1.5 1.5 0 0 0 5 4.5v15A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V8z" /><path d="M14 3v5h5M8.5 12.5h7M8.5 16h3.5" /><path d="M13.5 18.5c1-1.6 1.8-1.6 2.3-.4.3.7.9.7 1.7-.2" /></svg>;
     case 'assets': return <svg {...p}><rect x="3" y="6" width="18" height="12" rx="2" /><path d="M7 10v4M10 10v4M12.5 10v4M16 10v4M18 10v4" /><path d="M8 3.5h8" /></svg>;
+    case 'hse': return <svg {...p}><path d="M12 2.8l7.5 3v5.6c0 4.6-3.1 8.5-7.5 9.8-4.4-1.3-7.5-5.2-7.5-9.8V5.8z" /><path d="M8.6 12.2l2.3 2.3 4.6-4.8" /></svg>;
     case 'mywork': return <svg {...p}><circle cx="12" cy="8" r="3.5" /><path d="M5 20.5c.7-3.6 3.4-5.5 7-5.5s6.3 1.9 7 5.5" /><path d="M17.5 3.5l1.2 1.2 2.3-2.3" /></svg>;
     case 'grid': return <svg {...p}><rect x="4" y="4" width="6" height="6" rx="1.2" /><rect x="14" y="4" width="6" height="6" rx="1.2" /><rect x="4" y="14" width="6" height="6" rx="1.2" /><rect x="14" y="14" width="6" height="6" rx="1.2" /></svg>;
     case 'bell': return <svg {...p}><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z" /><path d="M10 20.5a2 2 0 0 0 4 0" /></svg>;
