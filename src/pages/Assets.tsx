@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { q, rpc, supabase } from '../lib/supabase';
 import { useSession } from '../lib/session';
 import { cedis, longDate, money, today } from '../lib/format';
@@ -7,6 +7,7 @@ import { downloadCsv } from '../lib/download';
 import { tablePdf } from '../lib/pdf';
 import { Downloads, Empty, Field, FormModal, Loading, PageHead, Panel, Select, Status, useAction, useLoad } from '../components/ui';
 import { ASSET_FILTERS, ASSET_STATES, AssetOps, StatePill, holderText, labelsPdf } from './AssetOps';
+import { locOpts } from './AssetMore';
 
 const FUNDING: [string, string][] = [
   ['bank', 'Paid from bank'], ['momo', 'Paid from Mobile Money'], ['cash', 'Paid in cash'], ['ap', 'Owed to the supplier'],
@@ -20,30 +21,35 @@ export function AssetsPage() {
   const act = useAction();
   const [show, setShow] = useState('active');
   const [search, setSearch] = useState('');
+  const [params, setParams] = useSearchParams();
+  const locFilter = params.get('loc') || '';
   const [busyLabels, setBusyLabels] = useState(false);
   const [reg, setReg] = useState<any | null>(null);
   const [dep, setDep] = useState<string | null>(null);
   const [cats, setCats] = useState(false);
   const { data, error, loading, reload } = useLoad(async () => {
-    const [assets, categories, staff] = await Promise.all([
+    const [assets, categories, staff, locs] = await Promise.all([
       q<any[]>(supabase.from('assets').select('*, category:asset_categories(name), custodian:employees(full_name), project:projects!assets_holder_project_fkey(number,name)').eq('company_id', cid).order('tag') as any),
       q<any[]>(supabase.from('asset_categories').select('*').eq('company_id', cid).order('name') as any),
       q<any[]>(supabase.from('employees').select('id,full_name').eq('company_id', cid).eq('status', 'active').order('full_name') as any).catch(() => []),
+      q<any[]>(supabase.from('asset_locations').select('id,name,active').eq('company_id', cid).order('name') as any).catch(() => [] as any[]),
     ]);
-    return { assets, categories, staff };
+    return { assets, categories, staff, locs };
   }, [cid]);
   const filt = (ASSET_FILTERS.find(f => f[0] === show) || ASSET_FILTERS[0]);
-  const list = (data?.assets || []).filter(filt[2])
-    .filter(a => !search || `${a.tag} ${a.name} ${a.serial_no || ''} ${a.location || ''} ${holderText(a)}`.toLowerCase().includes(search.toLowerCase()));
+  const list = (data?.assets || []).filter(filt[2]).filter(a => !locFilter || a.location_id === locFilter)
+    .filter(a => !search || `${a.tag} ${a.name} ${a.serial_no || ''} ${a.manufacturer || ''} ${a.model || ''} ${a.location || ''} ${holderText(a)}`.toLowerCase().includes(search.toLowerCase()));
   const sum = (f: (a: any) => number) => list.reduce((s, a) => s + f(a), 0);
   const head = ['Tag', 'Asset', 'Category', 'Serial no.', 'Location', 'With', 'Purchased', 'Cost (GHS)', 'Acc. depreciation', 'Book value', 'Status'];
   const rows = list.map(a => [a.tag, a.name, a.category?.name || '', a.serial_no || '', a.location || '', holderText(a), a.purchase_date, money(a.cost), money(a.accumulated_depreciation), money(nbv(a)), a.status === 'active' ? (ASSET_STATES[a.state] || [a.state])[0] : a.status]);
   const foot = ['', 'Totals', '', '', '', '', '', money(sum(a => Number(a.cost))), money(sum(a => Number(a.accumulated_depreciation))), money(sum(nbv)), ''];
 
   const save = () => act.run(async () => {
-    const p = { ...reg, cost: Number(reg.cost), salvage_value: Number(reg.salvage_value) || 0, opening_depreciation: Number(reg.opening_depreciation) || 0 };
+    const { manufacturer, model, order_number, location_id, ...rest } = reg;
+    const p = { ...rest, location: data?.locs.find(l => l.id === location_id)?.name || '', cost: Number(reg.cost), salvage_value: Number(reg.salvage_value) || 0, opening_depreciation: Number(reg.opening_depreciation) || 0 };
     if (!(p.cost > 0)) throw new Error('Enter the cost.');
-    await rpc('register_asset', { cid, p, p_funding: reg.funding });
+    const newId = await rpc<string>('register_asset', { cid, p, p_funding: reg.funding });
+    if (manufacturer || model || order_number || location_id) await q(supabase.from('assets').update({ manufacturer: manufacturer || null, model: model || null, order_number: order_number || null, location_id: location_id || null }).eq('id', newId) as any);
     setReg(null); reload();
   }, 'Asset registered');
 
@@ -55,18 +61,20 @@ export function AssetsPage() {
       {can('accountant') && <>
         <button className="btn" type="button" onClick={() => setCats(true)}>Categories</button>
         <button className="btn" type="button" onClick={() => setDep(today().slice(0, 7))}>Run depreciation</button>
-        <button className="btn primary" type="button" onClick={() => setReg({ name: '', category_id: data?.categories[0]?.id || '', serial_no: '', location: '', custodian_id: '', purchase_date: today(), in_service_date: '', cost: '', salvage_value: '', opening_depreciation: '', warranty_until: '', notes: '', funding: 'bank', method: '', useful_life_months: '', annual_rate: '' })}>Register asset</button></>}
+        <Link className="btn" to="/assets/import">Import</Link>
+        <button className="btn primary" type="button" onClick={() => setReg({ name: '', category_id: data?.categories[0]?.id || '', serial_no: '', manufacturer: '', model: '', order_number: '', location_id: data?.locs.find(l => l.name === 'Head office')?.id || '', custodian_id: '', purchase_date: today(), in_service_date: '', cost: '', salvage_value: '', opening_depreciation: '', warranty_until: '', notes: '', funding: 'bank', method: '', useful_life_months: '', annual_rate: '' })}>Register asset</button></>}
     </PageHead>
     {data && <div className="chips">{ASSET_FILTERS.map(([k, l, fn]) => { const n = data.assets.filter(fn).length; return (n > 0 || ['active', 'all'].includes(k) || show === k) && <button key={k} type="button" className={'chip' + (show === k ? ' on' : '')} onClick={() => setShow(k)}>{l} <span>{n}</span></button>; })}</div>}
     <div className="filters">
-      <div className="field" style={{ width: 260 }}><label htmlFor="as-search">Search</label><input id="as-search" placeholder="Tag, name, serial, location, person" value={search} onChange={e => setSearch(e.target.value)} /></div>
+      <div className="field" style={{ width: 260 }}><label htmlFor="as-search">Search</label><input id="as-search" placeholder="Tag, name, serial, make, location, person" value={search} onChange={e => setSearch(e.target.value)} /></div>
+      {data && data.locs.length > 1 && <div className="field" style={{ width: 220 }}><label htmlFor="as-loc">Location</label><select id="as-loc" value={locFilter} onChange={e => setParams(e.target.value ? { loc: e.target.value } : {})}>{locOpts(data.locs, 'All locations').map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>}
     </div>
     <Loading error={error} loading={loading && !data} />
     {data && <Panel>{list.length ? <div className="scroll"><table>
       <thead><tr><th>Tag</th><th>Asset</th><th>Location / custodian</th><th className="r">Cost (GH₵)</th><th className="r">Book value</th><th>Status</th></tr></thead>
       <tbody>{list.map(a => <tr key={a.id}>
         <td className="num"><Link to={'/assets/' + a.id}>{a.tag}</Link></td>
-        <td><b>{a.name}</b><br /><span className="muted">{a.category?.name}{a.serial_no ? ' · ' + a.serial_no : ''}</span></td>
+        <td><b>{a.name}</b><br /><span className="muted">{a.category?.name}{a.manufacturer || a.model ? ' · ' + [a.manufacturer, a.model].filter(Boolean).join(' ') : ''}{a.serial_no ? ' · ' + a.serial_no : ''}</span></td>
         <td>{a.location || '—'}<br /><span className="muted">{holderText(a)}{a.state === 'deployed' && a.expected_return ? ` · back by ${a.expected_return}` : ''}</span></td>
         <td className="r num">{money(a.cost)}</td><td className="r num">{money(nbv(a))}</td><td>{a.status === 'active' ? <StatePill s={a.state} /> : <Status s={a.status} />}{a.status === 'active' && a.next_audit && a.next_audit < today() && <><br /><span className="pill bad" style={{ fontSize: 11 }}>audit overdue</span></>}</td></tr>)}</tbody>
       <tfoot><tr><td></td><td>Totals</td><td></td><td className="r num">{money(sum(a => Number(a.cost)))}</td><td className="r num">{money(sum(nbv))}</td><td></td></tr></tfoot>
@@ -78,7 +86,10 @@ export function AssetsPage() {
       <div className="grid-form">
         <Select label="Category" id="ra-cat" value={reg.category_id} onChange={v => setReg({ ...reg, category_id: v })} options={data.categories.map(c => [c.id, c.name])} />
         <Field label="Serial or registration no." id="ra-serial" value={reg.serial_no} onChange={v => setReg({ ...reg, serial_no: v })} />
-        <Field label="Location" id="ra-loc" value={reg.location} onChange={v => setReg({ ...reg, location: v })} placeholder="e.g. Tema warehouse" />
+        <Field label="Manufacturer" id="ra-mf" value={reg.manufacturer} onChange={v => setReg({ ...reg, manufacturer: v })} placeholder="e.g. Dell, Toyota, CAT" />
+        <Field label="Model" id="ra-md" value={reg.model} onChange={v => setReg({ ...reg, model: v })} />
+        <Select label="Location" id="ra-loc" value={reg.location_id} onChange={v => setReg({ ...reg, location_id: v })} options={locOpts(data.locs, 'Not set')} />
+        <Field label="Order / PO no." id="ra-po" value={reg.order_number} onChange={v => setReg({ ...reg, order_number: v })} />
         <Select label="Custodian" id="ra-cust" value={reg.custodian_id} onChange={v => setReg({ ...reg, custodian_id: v })} options={[['', 'Nobody'], ...data.staff.map(s => [s.id, s.full_name] as [string, string])]} />
         <Field label="Purchase date" id="ra-pdate" type="date" value={reg.purchase_date} onChange={v => setReg({ ...reg, purchase_date: v })} required />
         <Field label="In service from (if later)" id="ra-sdate" type="date" value={reg.in_service_date} onChange={v => setReg({ ...reg, in_service_date: v })} />
@@ -138,18 +149,20 @@ export function AssetView() {
   const [move, setMove] = useState<any | null>(null);
   const [maint, setMaint] = useState<any | null>(null);
   const [disp, setDisp] = useState<any | null>(null);
+  const [det, setDet] = useState<any | null>(null);
   const { data, error, loading, reload } = useLoad(async () => {
     const a = await q<any>(supabase.from('assets').select('*, category:asset_categories(name), custodian:employees(full_name), supplier:suppliers(name), project:projects!assets_holder_project_fkey(id,number,name)').eq('id', id).single() as any);
-    const [deps, moves, maints, staff] = await Promise.all([
+    const [deps, moves, maints, staff, locs] = await Promise.all([
       q<any[]>(supabase.from('asset_depreciation').select('*').eq('asset_id', id).order('period') as any),
       q<any[]>(supabase.from('asset_movements').select('*, from:employees!asset_movements_from_custodian_fkey(full_name), to:employees!asset_movements_to_custodian_fkey(full_name)').eq('asset_id', id).order('move_date', { ascending: false }) as any),
       q<any[]>(supabase.from('asset_maintenance').select('*').eq('asset_id', id).order('service_date', { ascending: false }) as any),
       q<any[]>(supabase.from('employees').select('id,full_name').eq('company_id', cid).eq('status', 'active').order('full_name') as any).catch(() => []),
+      q<any[]>(supabase.from('asset_locations').select('id,name,active').eq('company_id', cid).order('name') as any).catch(() => [] as any[]),
     ]);
-    return { a, deps, moves, maints, staff };
+    return { a, deps, moves, maints, staff, locs };
   }, [id]);
   if (!data) return <Loading error={error} loading={loading} />;
-  const { a, deps, moves, maints, staff } = data;
+  const { a, deps, moves, maints, staff, locs } = data;
   const depHead = ['Month', 'Depreciation (GHS)', 'Accumulated', 'Book value'];
   let acc = Number(a.accumulated_depreciation) - deps.reduce((s, d) => s + Number(d.amount), 0);
   const depRows = deps.map(d => { acc += Number(d.amount); return [d.period.slice(0, 7), money(d.amount), money(acc), money(Number(a.cost) - acc)]; });
@@ -163,6 +176,7 @@ export function AssetView() {
       <Downloads pdf={() => tablePdf({ company: company!, title: `Depreciation: ${a.tag} ${a.name}`, head: depHead, body: depRows, rightAlign: [1, 2, 3], filename: `depreciation-${a.tag}`,
         notes: `Cost GHS ${money(a.cost)}, residual GHS ${money(a.salvage_value)}. ${methodText(a)}. Purchased ${longDate(a.purchase_date)}${a.location ? ', located at ' + a.location : ''}.` })} />
       {a.status === 'active' && can('hr', 'accountant') && <button className="btn" type="button" onClick={() => setMove({ date: today(), location: a.location || '', custodian: a.custodian_id || '', note: '' })}>Move or reassign</button>}
+      {can('accountant', 'store') && <button className="btn" type="button" onClick={() => setDet({ manufacturer: a.manufacturer || '', model: a.model || '', serial_no: a.serial_no || '', order_number: a.order_number || '', warranty_until: a.warranty_until || '', location_id: a.location_id || '', notes: a.notes || '' })}>Edit details</button>}
       {a.status === 'active' && <button className="btn" type="button" onClick={() => setMaint({ service_date: today(), description: '', vendor: '', cost: '', next_due: '' })}>Log maintenance</button>}
       {a.status === 'active' && can('accountant') && <button className="btn primary" type="button" onClick={() => setDisp({ date: today(), proceeds: '', method: 'bank' })}>Sell or write off</button>}
     </PageHead>
@@ -173,13 +187,14 @@ export function AssetView() {
       <div className="tile"><span>{a.status === 'active' ? 'Depreciated to' : 'Disposed'}</span><b style={{ fontSize: 16 }}>{a.status === 'active' ? (a.last_depreciated ? a.last_depreciated.slice(0, 7) : 'Not yet') : `${longDate(a.disposal_date)} for ${money(a.disposal_proceeds)}`}</b></div>
     </div>
     <Panel pad><div className="grid-form">
+      <div><div className="label">Make / model</div>{[a.manufacturer, a.model].filter(Boolean).join(' ') || '—'}</div>
       <div><div className="label">Serial / registration</div>{a.serial_no || '—'}</div>
       <div><div className="label">Location</div>{a.location || '—'}</div>
       <div><div className="label">With</div>{a.custodian?.full_name || (a.project ? <Link to={'/projects/' + a.project.id}>{a.project.number} {a.project.name}</Link> : '—')}{a.expected_return ? <span className={a.expected_return < today() ? 'pill bad' : 'muted'}> back by {a.expected_return}</span> : null}</div>
       <div><div className="label">Audit</div>{a.last_audit ? `Last ${a.last_audit}` : 'Never audited'}{a.next_audit ? <> · next <span className={a.next_audit < today() ? 'pill bad' : ''}>{a.next_audit}</span></> : ''}</div>
       <div><div className="label">Staff can request it</div>{a.requestable ? 'Yes' : 'No'}</div>
       <div><div className="label">Supplier</div>{a.supplier?.name || '—'}</div>
-      <div><div className="label">Purchased</div>{longDate(a.purchase_date)}</div>
+      <div><div className="label">Purchased</div>{longDate(a.purchase_date)}{a.order_number ? ` · ${a.order_number}` : ''}</div>
       <div><div className="label">Warranty</div>{a.warranty_until ? longDate(a.warranty_until) + (a.warranty_until < today() ? ' (expired)' : '') : '—'}</div>
     </div>{a.notes && <p className="muted">{a.notes}</p>}</Panel>
     <div className="two">
@@ -206,6 +221,20 @@ export function AssetView() {
         <Select label="New custodian" id="mv-cust" value={move.custodian} onChange={v => setMove({ ...move, custodian: v })} options={[['', 'Nobody'], ...staff.map(s => [s.id, s.full_name] as [string, string])]} />
       </div>
       <Field label="Note" id="mv-note" value={move.note} onChange={v => setMove({ ...move, note: v })} />
+    </FormModal>}
+    {det && <FormModal title={`Details of ${a.tag}`} busy={act.busy} onClose={() => setDet(null)} onSave={() => act.run(async () => {
+      if (det.location_id !== (a.location_id || '') && a.state === 'transit') throw new Error('It is in transit. Close the transfer first.');
+      await q(supabase.from('assets').update({ manufacturer: det.manufacturer || null, model: det.model || null, serial_no: det.serial_no || null, order_number: det.order_number || null, warranty_until: det.warranty_until || null, location_id: det.location_id || null, notes: det.notes || null }).eq('id', a.id) as any);
+      setDet(null); reload(); }, 'Saved')}>
+      <div className="grid-form">
+        <Field label="Manufacturer" id="dt-mf" value={det.manufacturer} onChange={v => setDet({ ...det, manufacturer: v })} />
+        <Field label="Model" id="dt-md" value={det.model} onChange={v => setDet({ ...det, model: v })} />
+        <Field label="Serial / registration" id="dt-sn" value={det.serial_no} onChange={v => setDet({ ...det, serial_no: v })} />
+        <Field label="Order / PO no." id="dt-po" value={det.order_number} onChange={v => setDet({ ...det, order_number: v })} />
+        <Field label="Warranty until" id="dt-w" type="date" value={det.warranty_until} onChange={v => setDet({ ...det, warranty_until: v })} />
+        <Select label="Location (to move it between sites, use Transfer)" id="dt-l" value={det.location_id} onChange={v => setDet({ ...det, location_id: v })} options={locOpts(locs, 'Not set')} />
+      </div>
+      <Field label="Notes" id="dt-n" value={det.notes} onChange={v => setDet({ ...det, notes: v })} />
     </FormModal>}
     {maint && <FormModal title="Log maintenance" busy={act.busy} onClose={() => setMaint(null)}
       onSave={() => act.run(async () => { await q(supabase.from('asset_maintenance').insert({ company_id: a.company_id, asset_id: id, service_date: maint.service_date, description: maint.description, vendor: maint.vendor || null, cost: Number(maint.cost) || 0, next_due: maint.next_due || null }) as any); setMaint(null); reload(); }, 'Maintenance logged')}>

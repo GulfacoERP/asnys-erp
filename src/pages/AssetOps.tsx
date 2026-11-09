@@ -8,11 +8,12 @@ import { longDate, money, today } from '../lib/format';
 import { downloadCsv } from '../lib/download';
 import { tablePdf } from '../lib/pdf';
 import { Downloads, Empty, Field, FormModal, Loading, PageHead, Panel, Select, useAction, useLoad } from '../components/ui';
+import { SendTransferModal, locOpts } from './AssetMore';
 
 /** Day-to-day state of an asset (separate from its accounting status: in use, disposed, written off). */
 export const ASSET_STATES: Record<string, [string, string]> = {
   ready: ['Ready to deploy', 'good'], deployed: ['Deployed', ''], pending: ['Pending', 'warn'], repair: ['Out for repair', 'warn'],
-  broken: ['Broken', 'bad'], lost: ['Lost or stolen', 'bad'], archived: ['Archived', ''],
+  broken: ['Broken', 'bad'], lost: ['Lost or stolen', 'bad'], archived: ['Archived', ''], transit: ['In transit', 'warn'],
 };
 export const StatePill = ({ s }: { s: string }) => { const [l, c] = ASSET_STATES[s] || [s, '']; return <span className={'pill ' + c}>{l}</span>; };
 export const holderText = (a: any) => a.custodian?.full_name || (a.project ? `${a.project.number || ''} ${a.project.name}`.trim() : '') || '';
@@ -22,6 +23,7 @@ export const ASSET_FILTERS: [string, string, (a: any) => boolean][] = [
   ['deployed', 'Deployed', a => a.state === 'deployed'],
   ['ready', 'Ready to deploy', a => a.status === 'active' && a.state === 'ready'],
   ['pending', 'Pending', a => a.state === 'pending'],
+  ['transit', 'In transit', a => a.state === 'transit'],
   ['undeployable', 'Repair or broken', a => ['repair', 'broken'].includes(a.state)],
   ['lost', 'Lost or stolen', a => a.state === 'lost'],
   ['overdue', 'Overdue back', a => a.state === 'deployed' && a.expected_return && a.expected_return < today()],
@@ -63,6 +65,7 @@ export function AssetOps({ a, staff, onDone }: { a: any; staff: any[]; onDone: (
   const [back, setBack] = useState<any | null>(null);
   const [audit, setAudit] = useState<any | null>(null);
   const [state, setState] = useState<any | null>(null);
+  const [send, setSend] = useState(false);
   const { data: projects } = useLoad(() => out ? q<any[]>(supabase.from('projects').select('id,number,name').eq('company_id', cid).in('status', ['planned', 'active']).order('name') as any) : Promise.resolve([]), [cid, !!out]);
   const mgr = can('accountant', 'store');
   if (a.status !== 'active') return null;
@@ -71,9 +74,12 @@ export function AssetOps({ a, staff, onDone }: { a: any; staff: any[]; onDone: (
     {mgr && a.state === 'deployed' && <button className="btn primary" type="button" onClick={() => setBack({ state: 'ready', location: '', note: '' })}>Check in</button>}
     {mgr && ['ready', 'pending'].includes(a.state) && <button className="btn primary" type="button" onClick={() => setOut({ to: 'employee', employee: '', project: '', location: '', expected: '', note: '' })}>Check out</button>}
     {mgr && <button className="btn" type="button" onClick={() => setAudit({ condition: 'good', location: a.location || '', note: '', next: '' })}>Audit</button>}
-    {mgr && a.state !== 'deployed' && <button className="btn" type="button" onClick={() => setState({ state: a.state === 'ready' ? 'repair' : 'ready', note: '' })}>Change status</button>}
+    {mgr && ['ready', 'pending', 'repair', 'broken'].includes(a.state) && <button className="btn" type="button" title="Send to another location; it stays In transit until received" onClick={() => setSend(true)}>Transfer</button>}
+    {a.state === 'transit' && <Link className="btn" to="/assets/transfers">In transit — open transfers</Link>}
+    {mgr && !['deployed', 'transit'].includes(a.state) && <button className="btn" type="button" onClick={() => setState({ state: a.state === 'ready' ? 'repair' : 'ready', note: '' })}>Change status</button>}
     {mgr && <button className="btn" type="button" title="Staff can ask for it from Assets → Requests" onClick={() => act.run(async () => { await q(supabase.from('assets').update({ requestable: !a.requestable }).eq('id', a.id) as any); onDone(); }, a.requestable ? 'No longer requestable' : 'Staff can now request it')}>{a.requestable ? 'Stop requests' : 'Allow requests'}</button>}
 
+    {send && <SendTransferModal asset={a} onClose={() => setSend(false)} onDone={() => { setSend(false); onDone(); }} />}
     {out && <FormModal title={`Check out ${a.tag}`} submit="Check out" busy={act.busy} onClose={() => setOut(null)} onSave={() => act.run(async () => {
       await rpc('checkout_asset', { p_asset: a.id, p_employee: out.to === 'employee' ? out.employee || null : null, p_project: out.to === 'project' ? out.project || null : null,
         p_location: out.location || null, p_expected_return: out.expected || null, p_note: out.note || null, p_request: out.request || null });
@@ -108,7 +114,7 @@ export function AssetOps({ a, staff, onDone }: { a: any; staff: any[]; onDone: (
     </FormModal>}
     {state && <FormModal title={`Status of ${a.tag}`} busy={act.busy} onClose={() => setState(null)} onSave={() => act.run(async () => {
       await rpc('set_asset_state', { p_asset: a.id, p_state: state.state, p_note: state.note || null }); setState(null); onDone(); }, 'Status changed')}>
-      <Select label="Status" id="st-s" value={state.state} onChange={v => setState({ ...state, state: v })} options={Object.entries(ASSET_STATES).filter(([k]) => k !== 'deployed').map(([k, [l]]) => [k, l] as [string, string])} />
+      <Select label="Status" id="st-s" value={state.state} onChange={v => setState({ ...state, state: v })} options={Object.entries(ASSET_STATES).filter(([k]) => !['deployed', 'transit'].includes(k)).map(([k, [l]]) => [k, l] as [string, string])} />
       <Field label="Note (e.g. sent to Toyota Ghana for brake repair)" id="st-n" value={state.note} onChange={v => setState({ ...state, note: v })} />
       <p className="muted" style={{ margin: 0, fontSize: 13 }}>Archived keeps it on the books but out of use. To sell or write it off, use Sell or write off.</p>
     </FormModal>}
@@ -124,22 +130,27 @@ export function AssetRequestsPage() {
   const [ask, setAsk] = useState<any | null>(null);
   const [give, setGive] = useState<any | null>(null);
   const { data, error, loading, reload } = useLoad(async () => {
-    const [reqs, avail, cats, projects, staff] = await Promise.all([
+    const [reqs, avail, cats, projects, staff, locs] = await Promise.all([
       q<any[]>(supabase.from('asset_requests').select('*, asset:assets!asset_requests_asset_id_fkey(id,tag,name), category:asset_categories(name), employee:employees(id,full_name), project:projects(number,name), given:assets!asset_requests_fulfilled_asset_id_fkey(id,tag)').eq('company_id', cid).order('created_at', { ascending: false }) as any),
       q<any[]>(supabase.from('assets').select('id,tag,name,state,requestable,category_id').eq('company_id', cid).eq('status', 'active').order('tag') as any),
       q<any[]>(supabase.from('asset_categories').select('id,name').eq('company_id', cid).order('name') as any),
       q<any[]>(supabase.from('projects').select('id,number,name').eq('company_id', cid).in('status', ['planned', 'active']).order('name') as any),
       q<any[]>(supabase.from('employees').select('id,full_name,user_id').eq('company_id', cid).eq('status', 'active').order('full_name') as any).catch(() => []),
+      q<any[]>(supabase.from('asset_locations').select('id,name,manager_id,active').eq('company_id', cid).order('name') as any).catch(() => [] as any[]),
     ]);
-    return { reqs, avail, cats, projects, staff };
+    return { reqs, avail, cats, projects, staff, locs };
   }, [cid]);
-  const F: [string, string, (r: any) => boolean][] = [['open', 'Open', r => ['pending', 'approved'].includes(r.status)], ['mine', 'Mine', r => r.requested_by === session?.user.id],
+  const me = session?.user.id;
+  const locOf = (id?: string | null) => (data?.locs || []).find(l => l.id === id);
+  const siteMgr = (r: any) => !r.escalated && !!r.location_id && locOf(r.location_id)?.manager_id === me && r.requested_by !== me;
+  const canDecide = (r: any) => (mgr && r.requested_by !== me) || siteMgr(r);
+  const F: [string, string, (r: any) => boolean][] = [['open', 'Open', r => ['pending', 'approved'].includes(r.status)], ['site', 'For my site', r => r.status === 'pending' && siteMgr(r)], ['mine', 'Mine', r => r.requested_by === session?.user.id],
     ['done', 'Fulfilled', r => r.status === 'fulfilled'], ['closed', 'Declined or cancelled', r => ['rejected', 'cancelled'].includes(r.status)], ['all', 'All', () => true]];
   const list = (data?.reqs || []).filter((F.find(f => f[0] === show) || F[0])[2]);
   const RS: Record<string, string> = { pending: 'warn', approved: 'good', fulfilled: '', rejected: 'bad', cancelled: '' };
   return <>
-    <PageHead title="Asset requests" sub="Ask for a laptop, vehicle, tool or equipment; the storekeeper approves and hands it over.">
-      <button className="btn primary" type="button" onClick={() => setAsk({ asset: '', category: '', description: '', project: '', from: today(), until: '' })}>Request an asset</button>
+    <PageHead title="Asset requests" sub="Ask for a laptop, tool or equipment. Your site manager approves or passes it to head office; the storekeeper hands it over. For a vehicle, use Fleet → Vehicle requests.">
+      <button className="btn primary" type="button" onClick={() => setAsk({ asset: '', category: '', description: '', project: '', from: today(), until: '', location: '', quantity: '1' })}>Request an asset</button>
     </PageHead>
     <Loading error={error} loading={loading && !data} />
     {data && <>
@@ -149,20 +160,21 @@ export function AssetRequestsPage() {
         <tbody>{list.map(r => <tr key={r.id}>
           <td><b className="num">{r.number}</b> {r.asset ? <Link to={'/assets/' + r.asset.id}>{r.asset.tag} {r.asset.name}</Link> : r.description}
             {r.asset && r.description !== `${r.asset.tag} ${r.asset.name}` && <><br /><span className="muted">{r.description}</span></>}{r.category && <><br /><span className="muted">Any {r.category.name}</span></>}</td>
-          <td>{r.employee?.full_name || '—'}{r.project && <><br /><span className="muted">{r.project.number} {r.project.name}</span></>}</td>
+          <td>{r.employee?.full_name || '—'}{r.quantity > 1 && <span className="muted"> × {r.quantity}</span>}{r.project && <><br /><span className="muted">{r.project.number} {r.project.name}</span></>}{r.location_id && <><br /><span className="muted">at {locOf(r.location_id)?.name}</span>{r.escalated ? <span className="pill" style={{ marginLeft: 4 }} title={r.escalated_note || ''}>head office</span> : ''}</>}</td>
           <td className="num">{r.needed_from}{r.needed_until ? ' → ' + r.needed_until : ''}</td>
           <td><span className={'pill ' + RS[r.status]}>{r.status}</span>{r.given && <><br /><Link to={'/assets/' + r.given.id} style={{ fontSize: 12 }}>{r.given.tag}</Link></>}{r.decision_note && <><br /><span className="muted" style={{ fontSize: 12 }}>{r.decision_note}</span></>}</td>
           <td className="r" style={{ whiteSpace: 'nowrap' }}>
-            {mgr && r.status === 'pending' && <>
+            {canDecide(r) && r.status === 'pending' && <>
               <button className="btn small" type="button" disabled={act.busy} onClick={() => act.run(async () => { await rpc('decide_asset_request', { p_id: r.id, p_approve: true }); reload(); }, 'Approved')}>Approve</button>{' '}
-              <button className="btn small ghost" type="button" disabled={act.busy} onClick={() => act.run(async () => { await rpc('decide_asset_request', { p_id: r.id, p_approve: false }); reload(); }, 'Declined')}>Decline</button></>}
+              <button className="btn small ghost" type="button" disabled={act.busy} onClick={() => act.run(async () => { await rpc('decide_asset_request', { p_id: r.id, p_approve: false }); reload(); }, 'Declined')}>Decline</button>{' '}
+              {siteMgr(r) && <button className="btn small ghost" type="button" title="Not available on site: send it to head office" disabled={act.busy} onClick={() => act.run(async () => { await rpc('escalate_asset_request', { p_id: r.id, p_note: 'Not available on site' }); reload(); }, 'Passed to head office')}>Pass to head office</button>}</>}
             {mgr && r.status === 'approved' && <button className="btn small primary" type="button" onClick={() => setGive({ r, asset: r.asset?.id || '', expected: r.needed_until || '' })}>Hand over</button>}
             {!mgr && r.requested_by === session?.user.id && ['pending', 'approved'].includes(r.status) && <button className="btn small ghost" type="button" disabled={act.busy} onClick={() => act.run(async () => { await rpc('decide_asset_request', { p_id: r.id, p_approve: false }); reload(); }, 'Request withdrawn')}>Withdraw</button>}
           </td></tr>)}</tbody></table></div> : <Empty>No requests here.</Empty>}</Panel>
     </>}
     {ask && data && <FormModal title="Request an asset" submit="Send request" busy={act.busy} onClose={() => setAsk(null)} onSave={() => act.run(async () => {
-      await rpc('request_asset', { cid, p_description: ask.description, p_asset: ask.asset || null, p_category: ask.category || null, p_project: ask.project || null, p_from: ask.from || null, p_until: ask.until || null });
-      setAsk(null); setShow('mine'); reload(); }, 'Request sent to the store')}>
+      await rpc('request_asset', { cid, p_description: ask.description, p_asset: ask.asset || null, p_category: ask.category || null, p_project: ask.project || null, p_from: ask.from || null, p_until: ask.until || null, p_location: ask.location || null, p_quantity: Number(ask.quantity) || 1 });
+      setAsk(null); setShow('mine'); reload(); }, ask.location && locOf(ask.location)?.manager_id ? 'Request sent to the site manager' : 'Request sent to the store')}>
       <Select label="A particular item" id="rq-a" value={ask.asset} onChange={v => setAsk({ ...ask, asset: v })} options={[['', 'No, describe what you need below'], ...data.avail.filter(a => a.requestable).map(a => [a.id, `${a.tag} ${a.name}${a.state !== 'ready' ? ' (in use now)' : ''}`] as [string, string])]} />
       {!ask.asset && <Select label="Kind of asset" id="rq-c" value={ask.category} onChange={v => setAsk({ ...ask, category: v })} options={[['', 'Any'], ...data.cats.map(c => [c.id, c.name] as [string, string])]} />}
       <Field label="What you need and why" id="rq-d" type="textarea" value={ask.description} onChange={v => setAsk({ ...ask, description: v })} placeholder="e.g. Laptop for the new site engineer at Prestea" />
@@ -170,7 +182,10 @@ export function AssetRequestsPage() {
         <Select label="For project" id="rq-p" value={ask.project} onChange={v => setAsk({ ...ask, project: v })} options={[['', 'None'], ...data.projects.map(p => [p.id, `${p.number || ''} ${p.name}`.trim()] as [string, string])]} />
         <Field label="Needed from" id="rq-f" type="date" value={ask.from} onChange={v => setAsk({ ...ask, from: v })} />
         <Field label="Until (blank if permanent)" id="rq-u" type="date" value={ask.until} onChange={v => setAsk({ ...ask, until: v })} />
+        <Select label="Needed at (your site or office)" id="rq-l" value={ask.location} onChange={v => setAsk({ ...ask, location: v })} options={locOpts(data.locs, 'Head office / not sure')} />
+        {!ask.asset && <Field label="How many" id="rq-q" type="number" step="1" min="1" value={ask.quantity} onChange={v => setAsk({ ...ask, quantity: v })} />}
       </div>
+      <p className="muted" style={{ margin: 0, fontSize: 13 }}>A request for a site goes to that site's manager first. If they don't have it, they pass it to head office.</p>
     </FormModal>}
     {give && data && <FormModal title={`Hand over for ${give.r.number}`} submit="Check out" busy={act.busy} onClose={() => setGive(null)} onSave={() => act.run(async () => {
       if (!give.asset) throw new Error('Choose the asset to give.');
