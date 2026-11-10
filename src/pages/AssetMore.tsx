@@ -335,7 +335,7 @@ export function LicencesPage() {
 }
 
 // ---------------------------------------------------------------- Warranty report
-export function WarrantyPage() {
+export function WarrantyPage({ embedded = false }: { embedded?: boolean }) {
   const { cid, company } = useSession();
   const [show, setShow] = useState('90');
   const { data, error, loading } = useLoad(() => q<any[]>(supabase.from('assets').select('id,tag,name,manufacturer,model,serial_no,location,warranty_until,purchase_date,supplier:suppliers(name)').eq('company_id', cid).eq('status', 'active').not('warranty_until', 'is', null).order('warranty_until') as any), [cid]);
@@ -346,9 +346,10 @@ export function WarrantyPage() {
   const days = (d: string) => Math.round((new Date(d).getTime() - new Date(today()).getTime()) / 864e5);
   const rows = list.map(a => [a.tag, a.name, [a.manufacturer, a.model].filter(Boolean).join(' '), a.serial_no || '', a.location || '', a.supplier?.name || '', a.purchase_date || '', a.warranty_until, days(a.warranty_until)]);
   return <>
-    <PageHead title="Warranty report" sub="Claim repairs before the warranty runs out. Set the warranty date when registering an asset.">
+    {embedded ? <div className="actions" style={{ justifyContent: 'flex-end' }}><Downloads pdf={() => tablePdf({ company: company!, title: 'Warranty report', subtitle: (F.find(f => f[0] === show) || F[2])[1] + ' · ' + longDate(today()), head, body: rows, landscape: true, rightAlign: [8], filename: 'warranty-' + today() })} csv={() => downloadCsv('warranty-' + today(), head, rows)} /></div> : null}
+    {!embedded && <PageHead title="Warranty report" sub="Claim repairs before the warranty runs out. Set the warranty date when registering an asset.">
       <Downloads pdf={() => tablePdf({ company: company!, title: 'Warranty report', subtitle: (F.find(f => f[0] === show) || F[2])[1] + ' · ' + longDate(today()), head, body: rows, landscape: true, rightAlign: [8], filename: 'warranty-' + today() })} csv={() => downloadCsv('warranty-' + today(), head, rows)} />
-    </PageHead>
+    </PageHead>}
     <Loading error={error} loading={loading && !data} />
     {data && <>
       <div className="chips">{F.map(([k, l, fn]) => <button key={k} type="button" className={'chip' + (show === k ? ' on' : '')} onClick={() => setShow(k)}>{l} <span>{data.filter(fn).length}</span></button>)}</div>
@@ -462,10 +463,110 @@ export function TelegramPanel() {
     </div>
   </Panel>;
 }
+export function FleetReminderPanel() {
+  const { cid, can } = useSession();
+  const act = useAction();
+  const [days, setDays] = useState<string | null>(null);
+  const { data, reload } = useLoad(() => q<any>(supabase.from('companies').select('fleet_reminder_days').eq('id', cid).single() as any).catch(() => null), [cid]);
+  if (!can() || !data) return null;
+  const cur = days ?? String(data.fleet_reminder_days ?? 30);
+  return <Panel title="Vehicle papers and driving licences" pad>
+    <p className="muted" style={{ marginTop: 0 }}>Roadworthy, insurance, road use, permits, statutory inspections and driving licences: a reminder goes to transport officers, the storekeeper, owners and admins on the first warning day, again 7 days before, on the expiry day (the driver too), and every week while it stays expired. They appear under the bell, on the Fleet page and, if set up below, on Telegram.</p>
+    <div className="actions"><div className="field" style={{ width: 220 }}><label htmlFor="fr-days">First warning (days before expiry)</label><input id="fr-days" type="number" min={1} max={120} value={cur} onChange={e => setDays(e.target.value)} /></div>
+      <button className="btn primary" type="button" disabled={act.busy || cur === String(data.fleet_reminder_days)} onClick={() => act.run(async () => { await rpc('set_fleet_reminder_days', { cid, p_days: Number(cur) }); setDays(null); reload(); }, 'Saved')}>Save</button></div>
+  </Panel>;
+}
 export function AssetSettingsPage() {
   return <>
     <PageHead title="Asset and fleet alerts" sub="Who is told about what, and where." />
+    <FleetReminderPanel />
     <TelegramPanel />
     <Panel pad><p className="muted" style={{ margin: 0 }}>In-app alerts always go to the people concerned: location managers for transfers and site requests, the storekeeper for low stock and head-office requests, and transport officers for the fleet. Tick transport officers in Settings → Team.</p></Panel>
+  </>;
+}
+
+// ---------------------------------------------------------------- Asset reports (activity, depreciation, audit, warranty, by location)
+const REPORTS: [string, string][] = [['activity', 'Activity'], ['depreciation', 'Depreciation'], ['audit', 'Audit'], ['warranty', 'Warranty'], ['location', 'By location']];
+export function AssetReportsPage() {
+  const { cid, company } = useSession();
+  const [tab, setTab] = useState('activity');
+  const [from, setFrom] = useState(today().slice(0, 5) + '01-01');
+  const [to, setTo] = useState(today());
+  const { data, error, loading } = useLoad(async () => {
+    const [assets, deps, moves, trs, items, imoves, maint, audits, locs] = await Promise.all([
+      q<any[]>(supabase.from('assets').select('id,tag,name,manufacturer,model,location,location_id,state,status,cost,accumulated_depreciation,salvage_value,purchase_date,last_audit,next_audit,category:asset_categories(name),custodian:employees(full_name)').eq('company_id', cid).order('tag') as any),
+      q<any[]>(supabase.from('asset_depreciation').select('asset_id,period,amount').eq('company_id', cid).gte('period', from.slice(0, 8) + '01') as any),
+      q<any[]>(supabase.from('asset_movements').select('*, asset:assets(tag,name), to_emp:employees!asset_movements_to_custodian_fkey(full_name)').eq('company_id', cid).gte('move_date', from).lte('move_date', to).order('created_at', { ascending: false }).limit(2000) as any),
+      q<any[]>(supabase.from('asset_transfers').select('id,number,status,sent_at,closed_at,asset:assets(tag,name),from_location_id,to_location_id,note,close_note').eq('company_id', cid).gte('sent_at', from).lte('sent_at', to + 'T23:59:59') as any).catch(() => [] as any[]),
+      q<any[]>(supabase.from('asset_items').select('id,name,unit').eq('company_id', cid) as any).catch(() => [] as any[]),
+      q<any[]>(supabase.from('asset_item_moves').select('*, employee:employees(full_name)').eq('company_id', cid).gte('moved_at', from).lte('moved_at', to + 'T23:59:59').order('moved_at', { ascending: false }).limit(2000) as any).catch(() => [] as any[]),
+      q<any[]>(supabase.from('asset_maintenance').select('*, asset:assets(tag,name)').eq('company_id', cid).gte('service_date', from).lte('service_date', to) as any),
+      q<any[]>(supabase.from('asset_audits').select('*, asset:assets(tag,name)').eq('company_id', cid).gte('audited_on', from).lte('audited_on', to).order('audited_on', { ascending: false }) as any),
+      q<any[]>(supabase.from('asset_locations').select('id,name').eq('company_id', cid).order('name') as any).catch(() => [] as any[]),
+    ]);
+    return { assets, deps, moves, trs, items, imoves, maint, audits, locs };
+  }, [cid, from, to]);
+  const ln = (id?: string) => data?.locs.find(l => l.id === id)?.name || '';
+  const sub = `${longDate(from)} to ${longDate(to)}`;
+
+  let head: string[] = [], rows: (string | number)[][] = [], right: number[] = [], title = '';
+  if (data && tab === 'activity') {
+    title = 'Asset activity report';
+    const KIND: Record<string, string> = { checkout: 'Checked out', checkin: 'Checked in', move: 'Moved', audit: 'Audited', status: 'Status changed' };
+    const ev = [
+      ...data.moves.map(m => [m.move_date, `${m.asset?.tag || ''} ${m.asset?.name || ''}`, KIND[m.kind] || 'Moved', [m.from_location, m.to_location].filter(Boolean).join(' → '), m.to_emp?.full_name || '', m.note || '']),
+      ...data.trs.map(t => [t.sent_at.slice(0, 10), `${t.asset?.tag || ''} ${t.asset?.name || ''}`, `Transfer ${t.number}: ${t.status.replace('_', ' ')}`, `${ln(t.from_location_id)} → ${ln(t.to_location_id)}`, '', [t.note, t.close_note].filter(Boolean).join(' / ')]),
+      ...data.imoves.map(m => { const i = data.items.find(x => x.id === m.item_id); return [m.moved_at.slice(0, 10), `${i?.name || 'Item'} × ${n0(m.qty)} ${i?.unit || ''}`, MOVE_KINDS[m.kind] || m.kind, [ln(m.location_id), m.to_location_id && ln(m.to_location_id)].filter(Boolean).join(' → '), m.employee?.full_name || '', m.note || '']; }),
+      ...data.maint.map(m => [m.service_date, `${m.asset?.tag || ''} ${m.asset?.name || ''}`, 'Maintenance', m.vendor || '', '', `${m.description} (GH₵ ${money(m.cost)})`]),
+    ].sort((a, b) => String(b[0]).localeCompare(String(a[0])));
+    head = ['Date', 'Asset or item', 'What happened', 'Where', 'Person', 'Note']; rows = ev;
+  }
+  if (data && tab === 'depreciation') {
+    title = 'Depreciation report';
+    const inP = (d: any) => d.period >= from.slice(0, 8) + '01' && d.period <= to;
+    const after = (d: any) => d.period > to;
+    rows = data.assets.filter(a => a.status === 'active' || data.deps.some(d => d.asset_id === a.id && inP(d))).map(a => {
+      const charge = data.deps.filter(d => d.asset_id === a.id && inP(d)).reduce((s, d) => s + Number(d.amount), 0);
+      const later = data.deps.filter(d => d.asset_id === a.id && after(d)).reduce((s, d) => s + Number(d.amount), 0);
+      const closing = Number(a.accumulated_depreciation) - later, opening = closing - charge;
+      return [a.tag, a.name, a.category?.name || '', a.purchase_date || '', money(a.cost), money(opening), money(charge), money(closing), money(Number(a.cost) - closing)];
+    });
+    const tot = (i: number) => money(rows.reduce((s, r) => s + Number(String(r[i]).replace(/,/g, '')), 0));
+    rows.push(['', 'Total', '', '', tot(4), tot(5), tot(6), tot(7), tot(8)]);
+    head = ['Tag', 'Asset', 'Category', 'Purchased', 'Cost', 'Acc. dep. at start', 'Charge in period', 'Acc. dep. at end', 'Book value']; right = [4, 5, 6, 7, 8];
+  }
+  if (data && tab === 'audit') {
+    title = 'Audit report';
+    const active = data.assets.filter(a => a.status === 'active' && a.state !== 'archived');
+    const state = (a: any) => !a.last_audit ? 'Never audited' : a.next_audit && a.next_audit < today() ? 'Overdue' : a.next_audit && a.next_audit <= new Date(Date.now() + 30 * 864e5).toISOString().slice(0, 10) ? 'Due in 30 days' : 'Up to date';
+    rows = active.map(a => { const last = data.audits.find(x => x.asset_id === a.id); return [a.tag, a.name, a.location || '', a.custodian?.full_name || '', a.last_audit || '', last?.condition || '', a.next_audit || '', state(a)]; })
+      .sort((x, y) => ['Overdue', 'Never audited', 'Due in 30 days', 'Up to date'].indexOf(String(x[7])) - ['Overdue', 'Never audited', 'Due in 30 days', 'Up to date'].indexOf(String(y[7])));
+    head = ['Tag', 'Asset', 'Location', 'With', 'Last audit', 'Condition found', 'Next audit', 'Status'];
+  }
+  if (data && tab === 'location') {
+    title = 'Assets by location';
+    const groups = new Map<string, any[]>();
+    data.assets.filter(a => a.status === 'active').forEach(a => { const k = a.location || 'No location'; groups.set(k, [...(groups.get(k) || []), a]); });
+    rows = [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([k, xs]) => [k, xs.length, xs.filter(a => a.state === 'deployed').length, xs.filter(a => a.state === 'ready').length, xs.filter(a => ['repair', 'broken'].includes(a.state)).length,
+      xs.filter(a => a.state === 'transit').length, money(xs.reduce((s, a) => s + Number(a.cost), 0)), money(xs.reduce((s, a) => s + Number(a.cost) - Number(a.accumulated_depreciation), 0))]);
+    head = ['Location', 'Assets', 'Deployed', 'Ready', 'Repair or broken', 'In transit', 'Cost (GHS)', 'Book value (GHS)']; right = [1, 2, 3, 4, 5, 6, 7];
+  }
+  const counts = data && tab === 'audit' ? data.audits.reduce((m: Record<string, number>, a) => ({ ...m, [a.condition]: (m[a.condition] || 0) + 1 }), {}) : null;
+  return <>
+    <PageHead title="Asset reports" sub="Activity, depreciation, audit, warranty and location reports, to print or download.">
+      {tab !== 'warranty' && data && <Downloads pdf={() => tablePdf({ company: company!, title, subtitle: tab === 'audit' || tab === 'location' ? longDate(today()) : sub, head, body: rows, rightAlign: right, landscape: true, filename: `${tab}-report-${to}` })}
+        csv={() => downloadCsv(`${tab}-report-${to}`, head, rows)} />}
+    </PageHead>
+    <div className="chips">{REPORTS.map(([k, l]) => <button key={k} type="button" className={'chip' + (tab === k ? ' on' : '')} onClick={() => setTab(k)}>{l}</button>)}</div>
+    {(tab === 'activity' || tab === 'depreciation' || tab === 'audit') && <div className="filters">
+      <Field label="From" id="ar-from" type="date" value={from} onChange={setFrom} /><Field label="To" id="ar-to" type="date" value={to} onChange={setTo} /></div>}
+    {tab === 'warranty' ? <WarrantyPage embedded /> : <>
+      <Loading error={error} loading={loading && !data} />
+      {counts && Object.keys(counts).length > 0 && <div className="tiles">{Object.entries(counts).map(([k, n]) => <div key={k} className="tile"><span>Audits found {k}</span><b>{n as number}</b></div>)}</div>}
+      {data && <Panel>{rows.length ? <div className="scroll"><table>
+        <thead><tr>{head.map((h, i) => <th key={h} className={right.includes(i) ? 'r' : ''}>{h.replace('GHS', 'GH₵')}</th>)}</tr></thead>
+        <tbody>{rows.slice(0, 1000).map((r, i) => <tr key={i}>{r.map((c, j) => <td key={j} className={(right.includes(j) ? 'r num' : '') + (tab === 'audit' && j === 7 && c === 'Overdue' ? ' bad' : '')}>{c}</td>)}</tr>)}</tbody></table></div>
+        : <Empty>Nothing in this period.</Empty>}</Panel>}
+    </>}
   </>;
 }

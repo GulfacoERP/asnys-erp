@@ -1,3 +1,4 @@
+import { MyChannelsPanel } from './Messaging';
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { q, rpc, supabase } from '../lib/supabase';
@@ -223,7 +224,8 @@ export function NotificationsPage() {
     <PageHead title="Notifications" sub={`${unread.length} unread`}>
       {unread.length > 0 && <button className="btn" type="button" onClick={() => act.run(async () => { await q(supabase.from('notifications').update({ read_at: new Date().toISOString() }).eq('user_id', session?.user.id).is('read_at', null) as any); reload(); window.dispatchEvent(new Event('asnys:notes')); })}>Mark all read</button>}
     </PageHead>
-    <Panel>{data && data.length ? <div className="scroll"><table><tbody>{data.map(n => <tr key={n.id} className="click" style={n.read_at ? { opacity: .6 } : undefined}
+    <MyChannelsPanel />
+    <Panel title="Recent">{data && data.length ? <div className="scroll"><table><tbody>{data.map(n => <tr key={n.id} className="click" style={n.read_at ? { opacity: .6 } : undefined}
       onClick={() => act.run(async () => { if (!n.read_at) await q(supabase.from('notifications').update({ read_at: new Date().toISOString() }).eq('id', n.id) as any); window.dispatchEvent(new Event('asnys:notes')); if (n.path) nav(n.path); else reload(); })}>
       <td style={{ width: 12 }}>{!n.read_at && <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 4, background: 'var(--accent)' }} />}</td>
       <td className="wrap-cell"><b>{n.title}</b>{n.body && <><br /><span className="muted">{n.body}</span></>}</td>

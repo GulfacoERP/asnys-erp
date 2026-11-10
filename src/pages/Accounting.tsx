@@ -58,12 +58,13 @@ export function AccountsPage() {
 }
 
 export function JournalPage() {
-  const { cid, company } = useSession();
+  const { cid, company, can } = useSession();
   const act = useAction();
   const [from, setFrom] = useState(monthStart());
   const [to, setTo] = useState(today());
   const [source, setSource] = useState('');
   const [manual, setManual] = useState<any | null>(null);
+  const [rev, setRev] = useState<any | null>(null);
   const { data: meta } = useLoad(async () => {
     const [accounts, projects, branches, centres] = await Promise.all([
       q<any[]>(supabase.from('accounts').select('id,code,name,type').eq('company_id', cid).eq('active', true).order('code') as any),
@@ -111,13 +112,20 @@ export function JournalPage() {
       <thead><tr><th>Entry</th><th>Date</th><th>Details</th><th className="r">Debit</th><th className="r">Credit</th></tr></thead>
       <tbody>{pg.rows.map((e: any) => e.lines.map((l: any, i: number) => <tr key={e.id + i}>
         <td className="num">{i ? '' : e.entry_no}</td><td className="num">{i ? '' : e.entry_date}</td>
-        <td>{i === 0 && <><b>{e.memo}</b><br /></>}<span className="muted num">{l.account.code}</span> {l.account.name}
+        <td>{i === 0 && <><b>{e.memo}</b>{e.reversed_by_entry && <span className="pill bad" style={{ marginLeft: 6 }}>Reversed</span>}
+          {['manual', 'journal', 'opening'].includes(e.source_type || 'manual') && !e.reversed_by_entry && can('accountant') && <button className="btn small ghost" type="button" style={{ marginLeft: 6 }} onClick={() => setRev({ e, date: today(), reason: '' })}>Reverse</button>}<br /></>}<span className="muted num">{l.account.code}</span> {l.account.name}
           {l.project && <span className="pill" style={{ marginLeft: 6 }}>{l.project.number || l.project.name}</span>}
           {l.branch && <span className="pill" style={{ marginLeft: 4 }}>{l.branch.code}</span>}{l.cc && <span className="pill" style={{ marginLeft: 4 }}>{l.cc.code}</span>}</td>
         <td className="r num">{Number(l.debit) ? money(l.debit) : ''}</td><td className="r num">{Number(l.credit) ? money(l.credit) : ''}</td></tr>))}</tbody>
     </table></div> : <Empty>No entries in this period.</Empty>}
       <Pager {...pg} noun="journal entries" />
     </Panel>}
+    {rev && <FormModal title={`Reverse ${rev.e.entry_no}`} submit="Post reversal" busy={act.busy} onClose={() => setRev(null)} onSave={() => act.run(async () => {
+      await rpc('reverse_journal', { p_entry: rev.e.id, p_date: rev.date, p_reason: rev.reason }); setRev(null); pg.reload(); }, 'Reversal posted')}>
+      <p style={{ margin: 0 }}>Posts a mirror entry that cancels <b>{rev.e.memo}</b>. Both stay in the books, so the history is clear.</p>
+      <div className="grid-form"><Field label="Date of the reversal" id="rv-date" type="date" value={rev.date} onChange={v => setRev({ ...rev, date: v })} required />
+        <Field label="Why" id="rv-why" value={rev.reason} onChange={v => setRev({ ...rev, reason: v })} placeholder="e.g. Posted to the wrong account" required /></div>
+    </FormModal>}
     {manual && meta && <FormModal title="Manual journal" submit="Post journal" busy={act.busy} onClose={() => setManual(null)}
       onSave={() => act.run(async () => {
         if (dr !== cr || dr === 0) throw new Error(`Debits (${money(dr)}) must equal credits (${money(cr)}) and not be zero.`);

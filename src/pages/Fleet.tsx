@@ -11,7 +11,7 @@ import { ConfirmButton, Downloads, Empty, Field, FormModal, Loading, PageHead, P
 // ---------------------------------------------------------------- Shared
 export const VEHICLE_TYPES: [string, string][] = [['car', 'Car'], ['pickup', 'Pickup'], ['van', 'Van'], ['truck', 'Truck / tipper'], ['bus', 'Bus'], ['motorbike', 'Motorbike'], ['plant', 'Plant (excavator, loader, grader)'], ['crane', 'Crane'], ['trailer', 'Trailer'], ['other', 'Other']];
 const FUELS: [string, string][] = [['diesel', 'Diesel'], ['petrol', 'Petrol'], ['lpg', 'LPG'], ['electric', 'Electric'], ['hybrid', 'Hybrid']];
-export const DOC_KINDS: [string, string][] = [['roadworthy', 'DVLA roadworthy certificate'], ['insurance', 'Insurance'], ['road_use', 'Road use fee'], ['registration', 'Registration (DVLA)'], ['permit', 'Permit (axle load, hazardous goods)'], ['tracker', 'Tracker subscription'], ['other', 'Other']];
+export const DOC_KINDS: [string, string][] = [['roadworthy', 'DVLA roadworthy certificate'], ['insurance', 'Insurance'], ['road_use', 'Road use fee'], ['registration', 'Registration (DVLA)'], ['permit', 'Permit (axle load, hazardous goods)'], ['inspection', 'Statutory inspection (crane, lifting gear, pressure vessel)'], ['fire_extinguisher', 'Fire extinguisher service'], ['tracker', 'Tracker subscription'], ['other', 'Other']];
 const V_STATUS: Record<string, [string, string]> = { available: ['Available', 'good'], in_use: ['On a trip', ''], maintenance: ['In the workshop', 'warn'], off_road: ['Off the road', 'bad'], disposed: ['Disposed', ''] };
 const TRIP_STATUS: Record<string, [string, string]> = { planned: ['Planned', ''], in_progress: ['On the road', 'warn'], completed: ['Completed', 'good'], cancelled: ['Cancelled', ''] };
 const REQ_STATUS: Record<string, [string, string]> = { pending: ['Waiting', 'warn'], approved: ['Vehicle allocated', 'good'], rejected: ['Declined', 'bad'], cancelled: ['Cancelled', ''], done: ['Done', ''] };
@@ -267,7 +267,7 @@ export function VehicleView() {
         <Field label="Expires" id="vd-x" type="date" value={doc.expires_on} onChange={x => setDoc({ ...doc, expires_on: x })} />
       </div>
       <div className="field"><label htmlFor="vd-f">Scan or photo (optional)</label><input id="vd-f" type="file" accept="image/*,.pdf" onChange={e => setDoc({ ...doc, file: e.target.files?.[0] || null })} /></div>
-      <p className="muted" style={{ margin: 0, fontSize: 13 }}>The transport officer is reminded 30 days and 7 days before expiry, and when it lapses. Adding a newer one replaces the old one. Record the payment itself as a bill or expense.</p>
+      <p className="muted" style={{ margin: 0, fontSize: 13 }}>Transport officers, the storekeeper and admins are reminded ahead (30 days unless changed in Alerts), again 7 days before, on the day it expires, and weekly while it stays expired. Adding a newer one replaces the old one. Record the payment itself as a bill or expense.</p>
     </FormModal>}
     {fuel && <FuelForm f={fuel} setF={setFuel} vehicle={v} b={b} onClose={() => setFuel(null)} onDone={() => { setFuel(null); done(); }} />}
     {svc && <FormModal title={`Job card for ${v.reg_no}`} busy={act.busy} onClose={() => setSvc(null)} onSave={() => act.run(async () => {
@@ -482,7 +482,7 @@ export function DriversPage() {
     {edit && b.data && <FormModal title={edit.id ? `Edit ${b.emp(edit.employee_id)}` : 'Add driver'} busy={act.busy} onClose={() => setEdit(null)} onSave={() => act.run(async () => {
       if (!edit.employee_id) throw new Error('Choose the employee.');
       const row = { company_id: b.cid, employee_id: edit.employee_id, licence_no: edit.licence_no || null, licence_class: edit.licence_class || null, licence_expiry: edit.licence_expiry || null, defensive_training_on: edit.defensive_training_on || null,
-        medical_expiry: edit.medical_expiry || null, active: edit.active, notes: edit.notes || null, reminded_for: null };
+        medical_expiry: edit.medical_expiry || null, active: edit.active, notes: edit.notes || null, reminded_for: null, medical_reminded_for: null };
       if (edit.id) await q(supabase.from('drivers').update(row).eq('id', edit.id) as any); else await q(supabase.from('drivers').insert(row) as any);
       setEdit(null); b.reload(); }, 'Saved')}>
       <div className="grid-form">

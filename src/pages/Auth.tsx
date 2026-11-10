@@ -128,7 +128,7 @@ export function AuthPage() {
   </LoginShell>;
 }
 
-export function NewPasswordPage({ welcome = false }: { welcome?: boolean }) {
+export function NewPasswordPage({ welcome = false, temporary = false }: { welcome?: boolean; temporary?: boolean }) {
   const { session } = useSession();
   const [password, setPassword] = useState('');
   const [err, setErr] = useState('');
@@ -138,17 +138,18 @@ export function NewPasswordPage({ welcome = false }: { welcome?: boolean }) {
     <form className="login-form" noValidate onSubmit={async e => {
       e.preventDefault(); setBusy(true); setErr('');
       if (password.length < 8) { setErr('Use at least 8 characters.'); setBusy(false); return; }
-      const { error } = await supabase.auth.updateUser({ password });
+      const { error } = await supabase.auth.updateUser(temporary ? { password, data: { must_change_password: false } } : { password });
       if (error) setErr(error.message); else markSignedIn();
       setBusy(false);
     }}>
-      <h1>{welcome ? `Welcome to ${invitedTo || BRAND}` : 'Choose a new password'}</h1>
-      <p className="login-sub">{welcome
+      <h1>{temporary ? 'Choose your own password' : welcome ? `Welcome to ${invitedTo || BRAND}` : 'Choose a new password'}</h1>
+      <p className="login-sub">{temporary ? <>You signed in with a temporary password. Choose your own now; from then on you log in with <b>{session?.user.email}</b> and that password.</> : welcome
         ? <>{invitedTo ? `You've been invited to use ${BRAND}. ` : ''}Choose a password. From now on you log in with <b>{session?.user.email || 'your email'}</b> and this password. If you forget it, use "Forgot your password?" on the log-in page.</>
         : <>Choose a new password for <b>{session?.user.email || 'your account'}</b>.</>}</p>
       <PasswordField id="newpw" label={welcome ? 'Password (at least 8 characters)' : 'New password'} value={password} onChange={setPassword} autoComplete="new-password" />
       {err && <div className="login-alert" role="alert">{err}</div>}
       <button className="login-btn" type="submit" disabled={busy || password.length < 8}><LockIcon />{busy ? 'Saving…' : 'Save password'}</button>
+      {temporary && <button className="login-link" type="button" onClick={() => supabase.auth.signOut()}>Sign out</button>}
     </form>
   </LoginShell>;
 }
