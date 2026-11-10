@@ -29,6 +29,7 @@ What is in the project:
 - `supabase/migrations/0014_asnys_v2_8.sql` — v2.8: projects on hold until further notice, new clients from the project form (run after 0013).
 - `supabase/migrations/0015_asnys_v2_8_1.sql` — v2.8.1: one link between tenders and projects, which fixes "more than one relationship was found for 'tenders' and 'projects'" on the Tenders page (run after 0014).
 - `supabase/migrations/0016_asnys_v2_9.sql` — v2.9: HSE & Compliance — incidents and investigation, corrective actions, toolbox talks and inductions, inspections, permits to work, compliance register, policies, sustainability (run after 0015).
+- `supabase/migrations/0020_asnys_v3_2.sql` — v3.2: approvals on Telegram (private) and email (Brevo API), logins with temporary passwords, activity log for the whole system, void entries made in error, asset reports (run after 0019).
 - `supabase/migrations/0019_asnys_v3_1_1.sql` — v3.1.1: fleet reminders to owners and admins too, statutory inspections, choose how far ahead (run after 0018).
 - `supabase/migrations/0018_asnys_v3_1.sql` — v3.1: Assets (locations, transfers, site requests, consumables, licences, Telegram alerts) and Fleet & Logistics (vehicles and papers, drivers, trips, fuel, service, vehicle requests, waybills, reports) (run after 0017).
 - `supabase/migrations/0017_asnys_v3_0.sql` — v3.0: HR and payroll: pay components, back pay, off-cycle runs, self-service payslips and profile, employee history, documents, onboarding and exit, Ghana public holidays, leave accrual and manager approval, announcements, org chart, HR reports, annual PAYE return (run after 0016).
@@ -61,7 +62,7 @@ If the editor struggles with a large paste, use the separate files instead:
 1. Open **SQL Editor → New query**.
 2. Open `supabase/migrations/0001_asnys.sql` in a text editor, copy everything, paste it into the query box.
 3. Choose **Run**. You should see a success message.
-4. Open a new query and do the same with `0002_asnys_v1_1.sql`, then `0003_asnys_v1_2.sql`, then `0004_asnys_v1_3.sql`, then `0005_asnys_v1_4.sql`, then `0006_asnys_v2_0.sql`, then `0007_asnys_v2_1.sql`, then `0008_asnys_v2_2.sql`, then `0009_asnys_v2_3.sql`, then `0010_asnys_v2_4.sql`, then `0011_asnys_v2_5.sql`, then `0012_asnys_v2_6.sql`, then `0013_asnys_v2_7.sql`, then `0014_asnys_v2_8.sql`, then `0015_asnys_v2_8_1.sql`, then `0016_asnys_v2_9.sql`, then `0017_asnys_v3_0.sql`, then `0018_asnys_v3_1.sql`, then `0019_asnys_v3_1_1.sql`. Run each file once per project, in number order.
+4. Open a new query and do the same with `0002_asnys_v1_1.sql`, then `0003_asnys_v1_2.sql`, then `0004_asnys_v1_3.sql`, then `0005_asnys_v1_4.sql`, then `0006_asnys_v2_0.sql`, then `0007_asnys_v2_1.sql`, then `0008_asnys_v2_2.sql`, then `0009_asnys_v2_3.sql`, then `0010_asnys_v2_4.sql`, then `0011_asnys_v2_5.sql`, then `0012_asnys_v2_6.sql`, then `0013_asnys_v2_7.sql`, then `0014_asnys_v2_8.sql`, then `0015_asnys_v2_8_1.sql`, then `0016_asnys_v2_9.sql`, then `0017_asnys_v3_0.sql`, then `0018_asnys_v3_1.sql`, then `0019_asnys_v3_1_1.sql`, then `0020_asnys_v3_2.sql`. Run each file once per project, in number order.
 
 **Upgrading an installation you already have:** run only the files you have not run yet, in number order (each "What's new" section below names its file). Never run a file twice, and never run the `setup/` parts on a database that already has Asnys in it.
 
@@ -483,6 +484,22 @@ select cron.schedule('asnys-cash-reminders', '10 6 * * *', $$select public.run_a
 
 Advances are not netted off later payments automatically. Where the contract recovers the advance from interim payments, add a deduction line on those invoices.
 
+
+## What's new in v3.2 — Telegram and email for approvals, temporary passwords, activity log, void
+
+The update package has one SQL file, `RUN-THIS-IN-SUPABASE.sql`, that brings any database from v3.0 up to v3.2 (it skips what is already there and can be run twice).
+
+**Approvals reach people.** Every approval now raises a notification to the people who decide, and tells the requester the outcome: the approval chain (bills, payroll, purchase orders, purchase and expense approvals above the limits), site purchase requests, expense claims, timesheets (one message per person and project), training requests, document reviews, stock requests from sites, plus everything that already notified (leave, profile changes, asset and vehicle requests, spend requests, budgets, progress reports, variations, permits…).
+- **Telegram, privately**: an owner adds the company bot under **Settings → Telegram & email** (token and username from @BotFather) and turns on the `pg_net` extension. Each person opens **Notifications** and presses **Connect Telegram**, then **Start** in Telegram. Each chooses Everything, Approvals only or Nothing. A group chat is now optional.
+- **Email**: Brevo API key and a sender address under **Settings → Telegram & email**. The sender only needs to be verified in Brevo (a code sent to that mailbox); authenticating the domain as well keeps mail out of spam. Approvals by default; each person can change it.
+
+**Logins without email.** In **Settings → Team** choose *Temporary password*, or in **HR → Employees** tick people and press **Create logins**. Asnys shows each person's temporary password once (copy or print slips). They must choose their own password at first sign-in. **Set new password** next to a person resets a forgotten one (owners and admins for anyone but the owner; HR for staff). This needs the updated `invite-member` function: Supabase → Edge Functions → invite-member → Code → paste the new file → Deploy updates.
+
+**Activity log** (Settings → Activity log; also Accounts): every create, change, delete, approval, void and sign-in in every module, with old and new values; filter by area, person, action and dates; PDF and CSV. Secrets (bot token, API key, product keys) are never stored in it.
+
+**Void entries made in error.** Tenders, quotes, purchase orders (before goods arrive), purchase requests, expense claims (before approval), leave, timesheets (before invoicing), stock, asset, vehicle and training requests, variations, trips, permits, draft contracts, leads and more: press **Void**, give a reason. The entry stays on record marked Voided, drops out of totals and approvals, and the void is in the activity log. Find the Void button on the entry (e.g. a tender) or next to it in the Activity log. Posted money entries are corrected by reversal: invoices with a credit note, bank and cash entries with Void, manual journals with **Reverse** (Accounts → Journal).
+
+**Asset reports**: Assets → Reports: activity, depreciation (opening, charge, closing, book value for any period), audit (overdue, never audited, condition found), warranty and by location.
 
 ## What's new in v3.1 — Assets upgrade and Fleet & Logistics
 

@@ -29,7 +29,7 @@ import { ApprovalsPage } from './pages/Approvals';
 import { Customer360 } from './pages/Customer360';
 import { ProjectCostsPage } from './pages/ProjectCosts';
 import { TrainingPage } from './pages/Training';
-import { ApprovalsInboxPage, AuditPage, BankCashPage, GeneralLedgerPage } from './pages/Finance';
+import { ApprovalsInboxPage, BankCashPage, GeneralLedgerPage } from './pages/Finance';
 import { ImportPage } from './pages/Import';
 import { InventoryPage, ItemView, StockCountView, StockCountsPage, StockIssueView, StockIssuesPage, TransfersPage, WarehousesPage } from './pages/Inventory';
 import { DocumentsPage } from './pages/Documents';
@@ -44,6 +44,10 @@ import { CampaignsPage, CommissionsPage, CrmDashboard, PartnersPage } from './pa
 import { Logo, LogoMark } from './components/Logo';
 import { ContractListPage, ContractView, ContractsPage } from './pages/Contracts';
 import { AssetAuditsPage, AssetMaintenancePage, AssetMovementsPage, AssetRequestsPage } from './pages/AssetOps';
+import { AssetImportPage, AssetItemsPage, AssetLocationsPage, AssetReportsPage, AssetTransfersPage, LicencesPage, WarrantyPage } from './pages/AssetMore';
+import { MessagingSettingsPage } from './pages/Messaging';
+import { ActivityPage } from './pages/Activity';
+import { DriversPage, FleetPage, FleetReportsPage, FleetServicePage, FuelPage, TripsPage, VehicleRequestsPage, VehicleView, WaybillView, WaybillsPage } from './pages/Fleet';
 import { AdvanceView, AdvancesPage, PettyCashPage, RequestView, RequestsPage } from './pages/Spend';
 
 export default function App() {
@@ -54,6 +58,7 @@ export default function App() {
   if (loading) return <Starting />;
   if (recovery && (session || !welcome)) return <NewPasswordPage welcome={welcome} />;
   if (!session) return <AuthPage />;
+  if ((session.user.user_metadata as any)?.must_change_password) return <NewPasswordPage temporary />;
   if (!companies.length) return <NoCompany />;
   return <Shell />;
 }
@@ -197,6 +202,27 @@ function Shell() {
           <Route path="/assets/audits" element={<AssetAuditsPage />} />
           <Route path="/assets/maintenance" element={<AssetMaintenancePage />} />
           <Route path="/assets/movements" element={<AssetMovementsPage />} />
+          <Route path="/assets/locations" element={<AssetLocationsPage />} />
+          <Route path="/assets/transfers" element={<AssetTransfersPage />} />
+          <Route path="/assets/items" element={<AssetItemsPage />} />
+          <Route path="/assets/licences" element={<LicencesPage />} />
+          <Route path="/assets/warranty" element={<WarrantyPage />} />
+          <Route path="/assets/import" element={<AssetImportPage />} />
+          <Route path="/assets/alerts" element={<MessagingSettingsPage />} />
+          <Route path="/assets/reports" element={<AssetReportsPage />} />
+          <Route path="/settings/messaging" element={<MessagingSettingsPage />} />
+          <Route path="/activity" element={<ActivityPage />} />
+          <Route path="/fleet" element={<FleetPage />} />
+          <Route path="/fleet/vehicles/:id" element={<VehicleView />} />
+          <Route path="/fleet/requests" element={<VehicleRequestsPage />} />
+          <Route path="/fleet/trips" element={<TripsPage />} />
+          <Route path="/fleet/fuel" element={<FuelPage />} />
+          <Route path="/fleet/service" element={<FleetServicePage />} />
+          <Route path="/fleet/waybills" element={<WaybillsPage />} />
+          <Route path="/fleet/waybills/:id" element={<WaybillView />} />
+          <Route path="/fleet/drivers" element={<DriversPage />} />
+          <Route path="/fleet/reports" element={<FleetReportsPage />} />
+          <Route path="/fleet/alerts" element={<MessagingSettingsPage />} />
           <Route path="/contracts" element={<ContractsPage />} />
           <Route path="/requests" element={<RequestsPage />} />
           <Route path="/requests/:id" element={<RequestView />} />
@@ -234,7 +260,7 @@ function Shell() {
           <Route path="/ledger" element={<GeneralLedgerPage />} />
           <Route path="/bank-cash" element={<BankCashPage />} />
           <Route path="/approvals-inbox" element={<ApprovalsInboxPage />} />
-          <Route path="/audit" element={<AuditPage />} />
+          <Route path="/audit" element={<ActivityPage />} />
           <Route path="/import" element={<ImportPage />} />
           <Route path="/cases" element={<CasesPage />} />
           <Route path="/cases/:id" element={<CaseView />} />

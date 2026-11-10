@@ -295,6 +295,31 @@ export function stockIssuePdf(o: { company: Company; doc: any; warehouse: string
   doc.save(safeName(d.number) + '.pdf');
 }
 
+/** Waybill / delivery note: travels with the goods and comes back signed as proof of delivery. */
+export function waybillPdf(o: { company: Company; w: any; vehicle: string; driver: string; transporter: string; project: string; lines: any[] }) {
+  const { company: c, w } = o;
+  const doc = newDoc();
+  const title = ({ delivery: 'Waybill / delivery note', collection: 'Collection note', transfer: 'Transfer waybill', return: 'Return note' } as Record<string, string>)[w.kind] || 'Waybill';
+  let y = header(doc, c, title, [['Waybill no.', w.number], ['Date', longDate(w.planned_on)], ['Project', o.project || '—']]);
+  y = block(doc, 'From', [w.from_place], M, y);
+  y = block(doc, 'To', [w.to_place, [w.contact_name, w.contact_phone].filter(Boolean).join(' · ')], 300, y - 26) + 6;
+  y = block(doc, 'Carried by', [w.transport === 'own' ? o.vehicle : [o.transporter, w.truck_reg].filter(Boolean).join(' · '), o.driver || [w.driver_name, w.driver_phone].filter(Boolean).join(' · ')], M, y) + 14;
+  table(doc, { ...tableStyle, startY: y, head: [['#', 'Description', 'Unit', 'Qty sent', 'Weight (kg)', 'Qty received']],
+    body: o.lines.map((l, i) => [String(i + 1), l.description, l.unit || '', qty(l.qty), l.weight_kg ? qty(l.weight_kg) : '', l.delivered_qty != null && w.status !== 'dispatched' && w.status !== 'draft' ? qty(l.delivered_qty) : '']),
+    columnStyles: { 0: { cellWidth: 24 }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' } } });
+  y = endY(doc) + 40;
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(...MUTED);
+  doc.text('Dispatched by: ______________________', M, y); doc.text('Driver: ______________________', 300, y);
+  y += 34;
+  doc.text(w.received_by_name ? `Received by: ${w.received_by_name}  ${w.delivered_at ? longDate(w.delivered_at.slice(0, 10)) : ''}` : 'Received by (name): ______________________', M, y);
+  doc.text('Signature and stamp: ______________________', 300, y);
+  y += 20;
+  doc.text('Received in good order and condition unless noted: ______________________________________________', M, y);
+  if (w.note || w.pod_note) note(doc, [w.note, w.pod_note && 'On delivery: ' + w.pod_note].filter(Boolean).join('\n'), y + 24);
+  footer(doc);
+  doc.save(safeName(w.number) + '.pdf');
+}
+
 /** Transmittal cover sheet sent with documents to the client or consultant. */
 export function transmittalPdf(o: { company: Company; t: any; project: string; items: { number: string; title: string; rev: string; type?: string; copies: number; response?: string | null }[] }) {
   const { company: c, t } = o;

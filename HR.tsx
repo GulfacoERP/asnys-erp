@@ -8,6 +8,7 @@ import { downloadCsv } from '../lib/download';
 import { tablePdf } from '../lib/pdf';
 import { Downloads, Empty, Field, FormModal, Loading, PageHead, Panel, Select, Status, useAction, useLoad, useToast } from '../components/ui';
 import { inviteAndSend } from '../lib/invites';
+import { createLogins, PasswordSlips, type Slip } from '../components/Logins';
 import { HolidaysPanel } from './People';
 
 const blank = { staff_no: '', full_name: '', email: '', phone: '', job_title: '', department: '', hire_date: '', basic_salary: '', allowances: '', ghana_card: '', ssnit_no: '', tin: '', bank_name: '', bank_branch: '', bank_account: '', momo_number: '', pay_method: 'bank', branch_id: '', cost_centre_id: '', status: 'active', is_junior: false, tier3_employee_rate: '', tier3_employer_rate: '', skills: '', location: '', country: 'Ghana', cost_rate: '', login_email: '' };
@@ -30,10 +31,15 @@ export function EmployeesPage() {
   const { data: access, reload: reloadAccess } = useLoad(() => can('hr') ? rpc<any[]>('employee_access', { cid }) : Promise.resolve([]), [cid]);
   const accessOf = (id: string) => (access || []).find(a => a.employee_id === id);
   const invitable = (e: any) => e.status === 'active' && accessOf(e.id)?.access !== 'active';
-  const inviteEmployees = (emps: any[], emailFor: (e: any) => string) => act.run(async () => {
+  const [slips, setSlips] = useState<{ slips: Slip[]; note?: string } | null>(null);
+  const inviteEmployees = (emps: any[], emailFor: (e: any) => string, how: 'password' | 'email' = 'email') => act.run(async () => {
     const withEmail = emps.filter(e => emailFor(e));
     const missing = emps.filter(e => !emailFor(e)).map(e => e.full_name);
     if (!withEmail.length) throw new Error('Add an email address to the employee record first.');
+    if (how === 'password') {
+      const r = await createLogins(cid, withEmail.map(e => ({ email: emailFor(e), role: 'staff', employee_id: e.id })));
+      setSlips({ slips: r.slips, note: [r.note, missing.length ? `No email on file for: ${missing.join(', ')}.` : ''].filter(Boolean).join(' ') }); setPicked([]); reloadAccess(); return;
+    }
     let m = await inviteAndSend(cid, withEmail.map(e => ({ email: emailFor(e), role: 'staff', employee_id: e.id })));
     if (missing.length) m += ` No email on file for: ${missing.join(', ')}.`;
     toast(m, /could not|not set up|Not valid|No email/.test(m)); setPicked([]); reloadAccess();
@@ -47,7 +53,9 @@ export function EmployeesPage() {
     <PageHead title="Employees" sub={data ? `${data.filter(e => e.status === 'active').length} active staff` : undefined}>
       <Downloads pdf={() => tablePdf({ company: company!, title: 'Staff list', subtitle: longDate(today()), head, body: rows, rightAlign: [5, 6], landscape: true, filename: 'staff-list' })}
         csv={() => downloadCsv('staff-list', head, rows)} />
-      {editable && picked.length > 0 && <button className="btn" type="button" disabled={act.busy} onClick={() => inviteEmployees(list.filter(e => picked.includes(e.id)), e => (e.email || '').trim())}>Invite selected to Asnys ({picked.length})</button>}
+      {editable && picked.length > 0 && <>
+        <button className="btn primary" type="button" disabled={act.busy} title="A temporary password for each, to hand over; no email needed" onClick={() => inviteEmployees(list.filter(e => picked.includes(e.id)), e => (e.email || '').trim(), 'password')}>Create logins ({picked.length})</button>
+        <button className="btn" type="button" disabled={act.busy} onClick={() => inviteEmployees(list.filter(e => picked.includes(e.id)), e => (e.email || '').trim())}>Email invitations ({picked.length})</button></>}
       {editable && <button className="btn primary" type="button" onClick={() => setEdit({ ...blank, hire_date: today() })}>Add employee</button>}
     </PageHead>
     <div className="filters"><Select label="Show" id="e-show" value={show} onChange={setShow} options={[['active', 'Active'], ['inactive', 'Left the company'], ['all', 'All']]} /></div>
@@ -64,6 +72,7 @@ export function EmployeesPage() {
         {editable && <td><AccessPill a={accessOf(e.id)} /></td>}</tr>)}</tbody>
     </table></div> : <Empty>No employees yet.</Empty>}</Panel>}
     {edit && <EmployeeEditor initial={edit} onClose={() => setEdit(null)} onSaved={id => { setEdit(null); if (!edit.id) nav('/employees/' + id); else reload(); }} />}
+    {slips && <PasswordSlips slips={slips.slips} note={slips.note} onClose={() => setSlips(null)} />}
   </>;
 }
 
@@ -77,9 +86,11 @@ export function EmployeeEditor({ initial, onClose, onSaved }: { initial: any; on
   const { data: others } = useLoad(() => q<any[]>(supabase.from('employees').select('id,full_name').eq('company_id', cid).eq('status', 'active').order('full_name') as any), [cid]);
   const { data: access, reload: reloadAccess } = useLoad(() => can('hr') && edit.id ? rpc<any[]>('employee_access', { cid }) : Promise.resolve([]), [cid]);
   const accessOf = (id: string) => (access || []).find(a => a.employee_id === id);
-  const inviteEmployees = (emps: any[], emailFor: (e: any) => string) => act.run(async () => {
+  const [slips, setSlips] = useState<{ slips: Slip[]; note?: string } | null>(null);
+  const inviteEmployees = (emps: any[], emailFor: (e: any) => string, how: 'password' | 'email' = 'email') => act.run(async () => {
     const withEmail = emps.filter(e => emailFor(e));
     if (!withEmail.length) throw new Error('Add an email address to the employee record first.');
+    if (how === 'password') { const r = await createLogins(cid, withEmail.map(e => ({ email: emailFor(e), role: 'staff', employee_id: e.id }))); setSlips(r); reloadAccess(); return; }
     const m = await inviteAndSend(cid, withEmail.map(e => ({ email: emailFor(e), role: 'staff', employee_id: e.id })));
     toast(m, /could not|not set up|Not valid|No email/.test(m)); reloadAccess();
   });
@@ -148,7 +159,9 @@ export function EmployeeEditor({ initial, onClose, onSaved }: { initial: any; on
         <Field label="Sign-in email (for My time & expenses)" id="em-login" type="email" value={edit.login_email === '(linked)' ? '' : edit.login_email} onChange={set('login_email')} placeholder={edit.login_was ? 'Linked — type a new email to change' : 'their work email'} />
       </div>
       {edit.id && !edit.login_was && <div className="actions" style={{ marginTop: -4 }}>
-        <button className="btn small" type="button" disabled={act.busy} onClick={() => inviteEmployees([edit], e => (e.login_email && e.login_email !== '(linked)' ? e.login_email : e.email || '').trim())}>Invite to Asnys</button>
+        <button className="btn small primary" type="button" disabled={act.busy} onClick={() => inviteEmployees([edit], e => (e.login_email && e.login_email !== '(linked)' ? e.login_email : e.email || '').trim(), 'password')}>Create login</button>{' '}
+        <button className="btn small" type="button" disabled={act.busy} onClick={() => inviteEmployees([edit], e => (e.login_email && e.login_email !== '(linked)' ? e.login_email : e.email || '').trim())}>Email invitation</button>
+        {slips && <PasswordSlips slips={slips.slips} note={slips.note} onClose={() => setSlips(null)} />}
         <span className="muted" style={{ fontSize: 13 }}>{accessOf(edit.id)?.access === 'invited' ? `Invited as ${accessOf(edit.id).email}. Press again to resend.` : 'Emails them a link to set a password and sign in as staff. Uses the sign-in email above, or their contact email.'}</span>
       </div>}
       <div className="label">Statutory IDs</div>

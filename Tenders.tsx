@@ -8,10 +8,11 @@ import { tablePdf } from '../lib/pdf';
 import { ConfirmButton, Empty, Field, FormModal, Loading, PageHead, Panel, Select, useAction, useLoad } from '../components/ui';
 import { Pager, SearchBox, usePaged } from '../components/paging';
 import { uploadDocFile } from '../components/ProjectDocs';
+import { VoidButton } from '../components/Void';
 
 export const TENDER_STATUS: Record<string, [string, string]> = {
   registered: ['Registered', ''], preparing: ['Preparing', 'warn'], review: ['Pre-submission review', 'warn'], submitted: ['Submitted', 'warn'],
-  awarded: ['Awarded', 'good'], lost: ['Lost', 'bad'], no_bid: ['Not bidding', ''], cancelled: ['Cancelled', ''],
+  awarded: ['Awarded', 'good'], lost: ['Lost', 'bad'], no_bid: ['Not bidding', ''], cancelled: ['Cancelled', ''], voided: ['Voided', 'bad'],
 };
 const KINDS: [string, string][] = [['tender', 'Tender'], ['rfq', 'Request for quotation'], ['quotation', 'Quotation'], ['eoi', 'Expression of interest'], ['prequalification', 'Prequalification'], ['direct_award', 'Direct award / PO']];
 const FILE_KINDS: [string, string][] = [['tender_docs', 'Tender documents'], ['summary', 'Summary report'], ['pricing', 'Pricing'], ['technical', 'Technical proposal'], ['submission', 'Final submission'], ['contract', 'Signed contract'], ['purchase_order', 'Purchase order'], ['minutes', 'Minutes'], ['other', 'Other']];
@@ -21,14 +22,14 @@ const margin = (t: any) => Number(t.est_value) > 0 ? Math.round((1 - Number(t.es
 export function TendersPage() {
   const { cid, company, can } = useSession();
   const nav = useNavigate();
-  const [view, setView] = useState<'open' | 'submitted' | 'awarded' | 'closed' | 'all'>('open');
+  const [view, setView] = useState<'open' | 'submitted' | 'awarded' | 'closed' | 'voided' | 'all'>('open');
   const [search, setSearch] = useState('');
   const [add, setAdd] = useState<any | null>(null);
   const act = useAction();
-  const statuses = { open: ['registered', 'preparing', 'review'], submitted: ['submitted'], awarded: ['awarded'], closed: ['lost', 'no_bid', 'cancelled'], all: null }[view];
+  const statuses = { open: ['registered', 'preparing', 'review'], submitted: ['submitted'], awarded: ['awarded'], closed: ['lost', 'no_bid', 'cancelled'], voided: ['voided'], all: null }[view];
   const pg = usePaged(async (a, b) => {
     let x = supabase.from('tenders').select('*, project:projects!tenders_project_id_fkey(id,number)', { count: 'exact' }).eq('company_id', cid).order('submission_deadline', { ascending: view === 'open', nullsFirst: false });
-    if (statuses) x = x.in('status', statuses);
+    if (statuses) x = x.in('status', statuses); else x = x.neq('status', 'voided');
     if (search) x = x.or(`number.ilike.%${search}%,title.ilike.%${search}%,client_name.ilike.%${search}%,client_ref.ilike.%${search}%`, {});
     return qPage(x.range(a, b) as any);
   }, [cid, view, search]);
@@ -49,7 +50,7 @@ export function TendersPage() {
       {can('sales', 'accountant', 'project_manager') && <button className="btn primary" type="button" onClick={() => setAdd({ title: '', kind: 'tender', customer_id: '', client_name: '', client_ref: '', location: '', deadline: '', est_value: '', est_cost: '', bid_bond_required: false, bid_bond_amount: '', engineering_lead_id: '', finance_lead_id: '', notes: '' })}>Register tender</button>}
     </PageHead>
     <div className="filters">
-      <div className="actions" style={{ alignSelf: 'end' }}>{([['open', 'Being prepared'], ['submitted', 'Submitted'], ['awarded', 'Awarded'], ['closed', 'Lost or dropped'], ['all', 'All']] as const).map(([k, l]) =>
+      <div className="actions" style={{ alignSelf: 'end' }}>{([['open', 'Being prepared'], ['submitted', 'Submitted'], ['awarded', 'Awarded'], ['closed', 'Lost or dropped'], ['all', 'All'], ['voided', 'Voided']] as const).map(([k, l]) =>
         <button key={k} type="button" className={'btn small' + (view === k ? ' primary' : '')} onClick={() => setView(k)}>{l}</button>)}</div>
       <SearchBox value={search} onChange={setSearch} placeholder="Number, title, client or reference" id="tn-search" />
     </div>
@@ -149,7 +150,9 @@ export function TenderView() {
       {open && <button className="btn ghost" type="button" onClick={() => setMove({ to: 'no_bid', date: today(), note: '' })}>Not bidding</button>}
       {t.status === 'awarded' && !t.project && can('accountant') && <button className="btn primary" type="button" onClick={() => setReg({ name: t.title, cost_centre: centres[0]?.id || '', manager: t.engineering_lead_id || '', start: today(), end: '', billing: 'fixed_price' })}>Register project</button>}
       {t.project && <Link className="btn" to={'/projects/' + t.project.id}>Project {t.project.number}</Link>}
+      <VoidButton table="tenders" id={t.id} label={t.number || 'this tender'} small={false} onDone={done} />
     </PageHead>
+    {t.status === 'voided' && <div className="note" style={{ background: 'var(--bad-soft, #fbebeb)' }}>Voided{t.voided_at ? ' on ' + longDate(t.voided_at.slice(0, 10)) : ''}: {t.void_reason}</div>}
     <div className="tiles">
       <div className="tile"><span>Deadline</span><b style={{ fontSize: 16 }}>{t.submission_deadline ? t.submission_deadline.slice(0, 16).replace('T', ' ') : '—'}</b></div>
       <div className="tile"><span>Estimated value / cost</span><b style={{ fontSize: 16 }}>{cedis(t.est_value)} / {money(t.est_cost)}</b>{margin(t) != null && <span className="muted" style={{ fontSize: 12 }}>margin {margin(t)}%</span>}</div>
