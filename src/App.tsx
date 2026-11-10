@@ -216,6 +216,7 @@ function Shell() {
           <Route path="/fleet/waybills/:id" element={<WaybillView />} />
           <Route path="/fleet/drivers" element={<DriversPage />} />
           <Route path="/fleet/reports" element={<FleetReportsPage />} />
+          <Route path="/fleet/alerts" element={<AssetSettingsPage />} />
           <Route path="/contracts" element={<ContractsPage />} />
           <Route path="/requests" element={<RequestsPage />} />
           <Route path="/requests/:id" element={<RequestView />} />
