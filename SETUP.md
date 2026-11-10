@@ -26,10 +26,16 @@ What is in the project:
 - `supabase/migrations/0011_asnys_v2_5.sql` — v2.5: staff invitations by email, sign-in status, password resets (run after 0010).
 - `supabase/migrations/0012_asnys_v2_6.sql` — v2.6: contract management, asset check-out, audits and requests (run after 0011).
 - `supabase/migrations/0013_asnys_v2_7.sql` — v2.7: spend requests, staff cash advances, petty cash floats, purchase orders in other currencies (run after 0012).
+- `supabase/migrations/0014_asnys_v2_8.sql` — v2.8: projects on hold until further notice, new clients from the project form (run after 0013).
+- `supabase/migrations/0015_asnys_v2_8_1.sql` — v2.8.1: one link between tenders and projects, which fixes "more than one relationship was found for 'tenders' and 'projects'" on the Tenders page (run after 0014).
+- `supabase/migrations/0016_asnys_v2_9.sql` — v2.9: HSE & Compliance — incidents and investigation, corrective actions, toolbox talks and inductions, inspections, permits to work, compliance register, policies, sustainability (run after 0015).
+- `supabase/migrations/0019_asnys_v3_1_1.sql` — v3.1.1: fleet reminders to owners and admins too, statutory inspections, choose how far ahead (run after 0018).
+- `supabase/migrations/0018_asnys_v3_1.sql` — v3.1: Assets (locations, transfers, site requests, consumables, licences, Telegram alerts) and Fleet & Logistics (vehicles and papers, drivers, trips, fuel, service, vehicle requests, waybills, reports) (run after 0017).
+- `supabase/migrations/0017_asnys_v3_0.sql` — v3.0: HR and payroll: pay components, back pay, off-cycle runs, self-service payslips and profile, employee history, documents, onboarding and exit, Ghana public holidays, leave accrual and manager approval, announcements, org chart, HR reports, annual PAYE return (run after 0016).
 - `supabase/functions/invite-member/` — the Supabase function that emails invitations (see "What's new in v2.5").
 - `docs/` — this guide and the product plan as PDFs.
 - `src/` — the web app (React and TypeScript).
-- `scripts/test-db.mjs` — 330 automatic checks of the money logic.
+- `scripts/test-db.mjs` — 381 automatic checks of the money logic.
 - `.env.example` — where your Supabase keys go.
 
 The free Supabase plan is for building and pilots. Before your first paying client goes live, move to the paid plan so the database never pauses and is backed up daily.
@@ -55,7 +61,7 @@ If the editor struggles with a large paste, use the separate files instead:
 1. Open **SQL Editor → New query**.
 2. Open `supabase/migrations/0001_asnys.sql` in a text editor, copy everything, paste it into the query box.
 3. Choose **Run**. You should see a success message.
-4. Open a new query and do the same with `0002_asnys_v1_1.sql`, then `0003_asnys_v1_2.sql`, then `0004_asnys_v1_3.sql`, then `0005_asnys_v1_4.sql`, then `0006_asnys_v2_0.sql`, then `0007_asnys_v2_1.sql`, then `0008_asnys_v2_2.sql`, then `0009_asnys_v2_3.sql`, then `0010_asnys_v2_4.sql`, then `0011_asnys_v2_5.sql`, then `0012_asnys_v2_6.sql`, then `0013_asnys_v2_7.sql`. Run each file once per project, in number order.
+4. Open a new query and do the same with `0002_asnys_v1_1.sql`, then `0003_asnys_v1_2.sql`, then `0004_asnys_v1_3.sql`, then `0005_asnys_v1_4.sql`, then `0006_asnys_v2_0.sql`, then `0007_asnys_v2_1.sql`, then `0008_asnys_v2_2.sql`, then `0009_asnys_v2_3.sql`, then `0010_asnys_v2_4.sql`, then `0011_asnys_v2_5.sql`, then `0012_asnys_v2_6.sql`, then `0013_asnys_v2_7.sql`, then `0014_asnys_v2_8.sql`, then `0015_asnys_v2_8_1.sql`, then `0016_asnys_v2_9.sql`, then `0017_asnys_v3_0.sql`, then `0018_asnys_v3_1.sql`, then `0019_asnys_v3_1_1.sql`. Run each file once per project, in number order.
 
 **Upgrading an installation you already have:** run only the files you have not run yet, in number order (each "What's new" section below names its file). Never run a file twice, and never run the `setup/` parts on a database that already has Asnys in it.
 
@@ -477,6 +483,89 @@ select cron.schedule('asnys-cash-reminders', '10 6 * * *', $$select public.run_a
 
 Advances are not netted off later payments automatically. Where the contract recovers the advance from interim payments, add a deduction line on those invoices.
 
+
+## What's new in v3.1 — Assets upgrade and Fleet & Logistics
+
+If you already ran 0001 to 0017, run only `0018_asnys_v3_1.sql`. Free-text asset locations already in the register become entries in the new locations list, and every company gets a **Head office** location.
+
+**Assets**
+- **Locations**: head office, branches, sites, stores and yards, each with a manager. Assets → Locations.
+- **Transfers**: Transfer on an asset sends it to another location. It shows **In transit** until the receiving manager presses Receive (with its condition) or Reject (with a reason). The sender can Recall it. Nothing else can be done to an asset while it is in transit.
+- **Requests through the site**: a request for a site goes to that site's manager. They approve, decline, or **Pass to head office**, after which the storekeeper decides. Requests now have a quantity.
+- **Accessories, components and consumables**: chargers, spare parts, PPE, toner. Stock per location, receive, issue, check out and return, transfer, adjust. Falling below the minimum alerts the storekeeper once.
+- **Software licences**: seats, product key (shown only to the store and Finance), seats assigned to people or computers, reminder 30 days before expiry.
+- **Warranty report**, **manufacturer / model / order number** on each asset, and **Import** of an existing register from Excel or CSV (Assets → Asset register → Import).
+- **Telegram alerts (optional)**: Assets → Alerts. Needs the `pg_net` extension (Supabase → Database → Extensions → pg_net). Without it everything still works; only Telegram is skipped.
+
+**Fleet & Logistics** (new home tile)
+- **Vehicles**: registration, make, model, mileage, service interval by km or months, driver, project, link to the asset register. **Documents**: DVLA roadworthy, insurance, road use fee and others, with scans; reminders 30 and 7 days before expiry.
+- **Drivers**: licence number, DVLA class, expiry (reminded), defensive-driving and medical dates.
+- **Vehicle requests**: anyone asks; the transport officer allocates a vehicle and driver. Double bookings are refused.
+- **Trips**: the driver starts and finishes each trip with the dashboard mileage. Mileage only goes forward; trips at weekends or outside 6:00–18:00 are marked.
+- **Fuel**: litres, amount, mileage, receipt photo. Km per litre is worked out between full tanks and flagged if 20% worse than expected. The litres also feed HSE → Sustainability (CO2). The fuel log does **not** post to the books — keep recording fuel bills and expenses as usual, so nothing is counted twice.
+- **Service and repairs**: job cards with cost and days off the road; a list of vehicles due by km or date.
+- **Waybills**: deliveries, collections and transfers, by our vehicle, hired truck or courier. Print the waybill, dispatch, and on arrival record who received it, the quantities actually received and a photo of the signed copy. Short deliveries alert the transport officer.
+- **Reports**: running cost per vehicle and per km, fuel economy, downtime, transport cost by project, papers and licences due.
+
+**Reminders (0019)**: roadworthy, insurance, road use, permits, statutory inspections (crane, lifting gear), fire extinguishers and driving licences are reminded to transport officers, the storekeeper, owners and admins — first warning 30 days ahead (change it in Fleet → Reminders), again 7 days before, on the expiry day (the driver too), then weekly while expired. They arrive under the bell and, if set up, on Telegram. They need the daily schedule from the cash-reminders section (`asnys-cash-reminders`); if you set that up already, nothing more to do.
+
+**Who does what**: tick **Transport officer** for a team member in Settings → Team (owners and admins). The storekeeper, Finance, owners and admins always count as transport officers. Drivers log fuel and run their own trips; project managers can raise and dispatch waybills.
+
+## What's new in v3.0 — HR and payroll
+
+If you already ran 0001 to 0016, run only `0017_asnys_v3_0.sql`. Existing payslip figures are unchanged; the new features add to them.
+
+| Feature | Where | What it does |
+| --- | --- | --- |
+| Pay components | Payroll → Pay components | Housing, transport, fuel, responsibility, site, acting allowances, commission, leave pay, reimbursements (not taxed); union dues, welfare, credit union, court orders and other deductions. Add your own. Earnings are taxed or not; deductions are owed to 2260 Other payroll deductions payable or an account you choose |
+| Regular items | Employee → Pay → Regular allowances and deductions | Paid every month from a start month to an optional end month; earnings pro rata for part months |
+| One-off items | Payroll month → One-off pay this month | Commission, leave pay or a deduction for one month only |
+| Pay changes and promotions | Employee → Pay → Change pay or promote; Payroll → Pay increase for many | Effective dates, reasons and history. A change dated in the past is paid automatically as **back pay** in the next regular payroll (with SSNIT on the basic arrears), once |
+| Joiners and leavers | Automatic | Paid to the day in the month they join or leave (calendar days) |
+| Off-cycle and final pay runs | Payroll → Off-cycle run | A separate run for a bonus, commission, correction or final pay. PAYE is worked out on the person's total for the month, less tax already deducted in posted runs |
+| Self-service | My work → My payslips, My profile | Staff download their own payslips and a yearly statement of earnings and tax; they ask to update contact, bank, MoMo and next-of-kin details, and HR approves. They see documents HR shares with them |
+| Employee profile | Employees → a name | Employment details (type, grade, manager, probation, contract end, notice), contact and next of kin, pay and its history, history of joins, promotions, transfers, warnings, awards (confidential lines hidden from the employee), documents with expiry, onboarding and exit tasks, certificate of service |
+| Onboarding and exit | Employee → Onboarding and exit; HR → Joining & leaving | Checklists with an owner for each task (HR, manager, IT, Finance, Stores, HSE, employee). Start exit: reason, notice and last day, leave days due and their value, assets still held, loans and advances; completing the exit makes the person inactive and removes their sign-in |
+| Leave | HR → Leave | Working days skip weekends and **public holidays** (Ghana holidays loaded for this year and next: New Year, Constitution Day, Independence Day, Good Friday, Easter Monday, May Day, Republic Day, Founder's Day, Farmers' Day, Christmas, Boxing Day; add Eid al-Fitr, Shaqq Day and Eid al-Adha when announced). Half days. Monthly earning and carry-over per leave type. The employee's manager or HR approves; nobody approves their own |
+| Announcements | HR → Announcements; home screen | To all staff, a department or a branch, pinned or not, with notifications |
+| Org chart | HR → Org chart | Who reports to whom, and a staff directory everyone can search (no pay or personal data) |
+| Policies | HR → Policies | HR and admin policies (handbook, leave, code of conduct, IT use) with a PDF and version; staff confirm they have read each version (shared with the HSE policy register) |
+| HR reports | HR → HR reports | Headcount, joiners and leavers, turnover, by department, type and gender, payroll cost by month, annual leave owed, probations, contracts and documents ending, birthdays, and the **annual PAYE return** for every employee (PDF and CSV) |
+| Reminders | Daily job | Probation ending in 14 days, contract ending in 30 and 7 days, documents expiring in 30 days; future-dated pay changes applied on their date |
+
+## What's new in v2.9 — HSE & Compliance (safety, compliance and sustainability)
+
+If you already ran 0001 to 0015, run only `0016_asnys_v2_9.sql`. A new **HSE & Compliance** tile appears on the home screen, and every project gets a **Safety** tab. The module follows the structure of ISO 45001 (occupational health and safety), ISO 37301 (compliance management) and ISO 14001 with the GHG Protocol and GRI (environment and sustainability reporting). It does not by itself make a company certified; it holds the records an auditor asks for.
+
+**HSE officers.** In Settings & team → Team and sign-in access, an owner or admin ticks **HSE officer** for the people who run safety (any role can also be an HSE officer). Owners and admins always count as HSE officers.
+
+| Page | What it does | Who |
+| --- | --- | --- |
+| Overview | LTIFR (per 1,000,000 hours), TRIR (per 200,000 hours), days without a lost-time injury, near misses, toolbox talks, inspections, open and overdue actions, active permits, expired compliance items; your actions and policies to read; **Report PDF** for management review | Everyone |
+| Incidents | Anyone reports an incident, near miss or unsafe condition from the phone, with photos. HSE and the project manager are told at once; owners and admins too for lost-time injuries, fatalities, dangerous occurrences, environmental incidents or high potential severity. Investigation: investigator, root cause, contributing factors, findings. Closing needs the root cause, every action verified or cancelled, and (if reportable) the report to the authority with its reference. Incident report PDF | Report: everyone. Investigate: HSE, project manager. Close: HSE |
+| Actions | Corrective and preventive actions from incidents, inspections, audits and reviews, each with an owner and due date. The owner marks it done with a note; an HSE officer who did not do the work verifies it worked. Overdue reminders weekly | Raise: HSE, project manager |
+| Talks & inductions | Toolbox talks with topic suggestions and attendance (staff ticked, subcontractors and casuals typed), printable sign-in sheet, upload the signed sheet. Company induction for new staff, site induction for each project, visitor induction, emergency drills, safety meetings. Inductions are valid 12 months (visitors 1 month). **Induction register** shows who is not inducted, expired or expiring. Optional **No induction, no work**: time cannot be booked to a project for someone without a valid site induction | Toolbox talks: anyone. Inductions: HSE, HR, project manager |
+| Inspections | Seven ready checklists (site safety, electrical isolation and LOTO, work at height, vehicle pre-use, fire safety, office, toolbox talk) and your own. Pass, fail or N/A on the phone; Complete scores it and raises an action for every failed item. PDF | Anyone starts; HSE edits checklists |
+| Permits | Hot work, electrical isolation (LOTO), work at height, confined space, excavation, lifting, general. At most 7 days. Issued by an HSE officer or the project manager, never by the person who asked for it. Suspend, resume, close with "work finished, area safe". Printable permit to post at the work place. Reminder if a permit runs past its time | Request: anyone. Issue: HSE, project manager |
+| Risks | Every hazard from every project risk assessment in one register, highest remaining risk first (likelihood × severity) | Everyone |
+| Compliance | Register of permits, licences, certificates, insurance and regular filings with owner, authority, reference, expiry or repeat, reminders before they are due and when they lapse, **Renewed / Filed** with the new date, and evidence files. **Add common Ghana items** gives a starting list (EPA permit, fire certificate, Factories Inspectorate, Energy Commission licence, tax and SSNIT clearance, insurance, ISO surveillance audits) | HSE, Finance, HR; the owner of each item |
+| Policies | Publish policies with a PDF and version; each person confirms they have read each version; see who has not | Publish: HSE, HR |
+| Sustainability | Fuel, electricity, water and waste each month, by project or company. Converted to tonnes of CO2e by scope (1: fuel burnt; 2: electricity bought) with editable emission factors: fuel from the UK DESNZ/DEFRA 2026 set, Ghana grid electricity from the IFI harmonised factor (0.360 kg/kWh); replace them with Energy Commission or supplier figures when you have them. Hours worked (timesheets plus site labour and subcontractors) for the safety rates and intensity. Report PDF laid out by GRI disclosure | Record: HSE, Finance, store, project managers |
+
+The daily `asnys-cash-reminders` job also sends the HSE reminders (actions, compliance items, permits). Every register change is in the audit trail.
+
+## What's new in v2.8 — projects on hold, clients from the project form
+
+If you already ran 0001 to 0013, run only `0014_asnys_v2_8.sql`.
+
+**On hold until further notice.** On a project's Overview, **Put on hold** works before the project starts as well as while it is in progress. Give the reason and, optionally, a **review date**; leave the date blank for "until further notice".
+
+- The project page shows *On hold until further notice* (or *review on* the date), since when and why. Finance and the project manager are notified.
+- While on hold, the project team cannot book new time, expense claims, purchase or spend requests, cash advances, purchase orders, stock issues or stock requests. Finance, admins and owners can still book costs that must be paid (security, standby, storage). Unused stock can always be returned to the store.
+- **Change review date** sets or clears the date. When the date arrives, the project manager and Finance are reminded once (by the daily `asnys-cash-reminders` job).
+- **Resume work** returns the project to where it was: Not started if work never began, otherwise In progress. Every hold, review date and resume is in the project's History.
+
+**Clients from the project form.** The Client list on a new or edited project ends with **+ Add a new client…**; enter the name (and phone, email, TIN) and it is saved to Sales → Customers and linked to the project. The project header now shows where the work happens (location and country).
 
 ## What's new in v2.7 — requests, cash imprest and foreign-currency purchase orders
 
