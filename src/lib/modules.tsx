@@ -49,7 +49,7 @@ export const MODULES: Module[] = [
   { id: 'fleet', name: 'Fleet & Logistics', blurb: 'Vehicles and papers, drivers, trips, fuel, service, vehicle requests and waybills', hue: '#0e6e8c', pages: [
     { to: '/fleet', label: 'Vehicles', also: ['/fleet/vehicles'] }, { to: '/fleet/requests', label: 'Vehicle requests' }, { to: '/fleet/trips', label: 'Trips' },
     { to: '/fleet/fuel', label: 'Fuel' }, { to: '/fleet/service', label: 'Service & repairs' }, { to: '/fleet/waybills', label: 'Waybills' },
-    { to: '/fleet/drivers', label: 'Drivers' }, { to: '/fleet/reports', label: 'Reports' }] },
+    { to: '/fleet/drivers', label: 'Drivers' }, { to: '/fleet/reports', label: 'Reports' }, { to: '/fleet/alerts', label: 'Reminders', roles: ['owner'] }] },
   { id: 'purchasing', name: 'Purchasing', blurb: 'Purchase orders, supplier bills and suppliers', hue: '#5d6b2f', pages: [
     { to: '/purchase-orders', label: 'Purchase orders', roles: ['accountant', 'store', 'project_manager'] },
     { to: '/bills', label: 'Supplier bills', roles: ['accountant'] }, { to: '/suppliers', label: 'Suppliers' }] },
