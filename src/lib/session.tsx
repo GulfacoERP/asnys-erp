@@ -35,6 +35,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     if (!s) { setCompanies([]); setLoading(false); return; }
     // Accept any invitations sent to this (confirmed) email before loading the companies they give access to.
     try { await supabase.rpc('claim_my_invites'); } catch { /* older database without v2.5: nothing to claim */ }
+    supabase.rpc('record_sign_in').then(() => undefined, () => undefined);   // activity log (v3.2); harmless on older databases
     const rows = await q<any[]>(supabase.from('memberships').select('role, company:companies(*)').eq('user_id', s.user.id) as any);
     const list = rows.filter(r => r.company).map(r => ({ company: r.company as Company, role: r.role as Role }))
       .sort((a, b) => a.company.name.localeCompare(b.company.name));

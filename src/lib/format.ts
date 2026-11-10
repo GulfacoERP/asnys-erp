@@ -46,7 +46,7 @@ export const statusPill = (s: string): string =>
   ({ paid: 'good', posted: 'warn', draft: '', approved: 'good', pending: 'warn', rejected: 'bad', active: 'good', done: 'good', on_hold: 'warn', planned: '',
     submitted: 'warn', reimbursed: 'good', disposed: '', written_off: 'bad', new: 'warn', contacted: '', qualified: 'good', unqualified: 'bad', converted: 'good',
     proposed: 'warn', confirmed: 'good', won: 'good', lost: 'bad',
-    in_progress: 'warn', waiting: '', resolved: 'good', closed: '', completed: 'good', ready: 'warn', invoiced: 'good', urgent: 'bad', high: 'bad' } as Record<string, string>)[s] ?? '';
+    voided: 'bad', in_progress: 'warn', waiting: '', resolved: 'good', closed: '', completed: 'good', ready: 'warn', invoiced: 'good', urgent: 'bad', high: 'bad' } as Record<string, string>)[s] ?? '';
 
 export const statusLabel = (s: string, kind: 'invoice' | 'bill' | 'payroll' | 'other' = 'other') => {
   if (s === 'posted') return kind === 'payroll' ? 'Posted' : 'Unpaid';

@@ -14,7 +14,7 @@ export const MODULES: Module[] = [
     { to: '/journal', label: 'Journal', roles: ['accountant'] }, { to: '/bank-cash', label: 'Bank & cash', roles: ['accountant'] },
     { to: '/bank-reconciliation', label: 'Bank reconciliation', roles: ['accountant'] }, { to: '/budgets', label: 'Budgets', roles: ['accountant'] },
     { to: '/requests', label: 'Requests', roles: ['accountant'] }, { to: '/advances', label: 'Cash advances', roles: ['accountant'] }, { to: '/petty-cash', label: 'Petty cash', roles: ['accountant'] },
-    { to: '/accounts', label: 'Chart of accounts', roles: ['accountant'] }, { to: '/audit', label: 'Audit trail', roles: ['accountant'] }] },
+    { to: '/accounts', label: 'Chart of accounts', roles: ['accountant'] }, { to: '/audit', label: 'Activity log', roles: ['accountant'] }] },
   { id: 'crm', name: 'CRM', blurb: 'Leads, pipeline, visits, campaigns and partners', hue: '#b4562b', pages: [
     { to: '/crm-dashboard', label: 'CRM dashboard' }, { to: '/crm', label: 'Leads & pipeline' }, { to: '/activities', label: 'Activities & visits' },
     { to: '/sales-performance', label: 'Performance & forecast' }, { to: '/campaigns', label: 'Campaigns' }, { to: '/partners', label: 'Partners' },
@@ -44,7 +44,7 @@ export const MODULES: Module[] = [
   { id: 'assets', name: 'Assets', blurb: 'Register, locations, transfers, requests, consumables, licences and audits', hue: '#3a6f8f', pages: [
     { to: '/assets', label: 'Asset register', also: ['/assets/import'] }, { to: '/assets/locations', label: 'Locations' }, { to: '/assets/transfers', label: 'Transfers' },
     { to: '/assets/requests', label: 'Requests' }, { to: '/assets/items', label: 'Consumables' }, { to: '/assets/licences', label: 'Licences' },
-    { to: '/assets/audits', label: 'Audits' }, { to: '/assets/maintenance', label: 'Maintenance' }, { to: '/assets/warranty', label: 'Warranty' },
+    { to: '/assets/audits', label: 'Audits' }, { to: '/assets/maintenance', label: 'Maintenance' }, { to: '/assets/reports', label: 'Reports', also: ['/assets/warranty'] },
     { to: '/assets/movements', label: 'Movements' }, { to: '/assets/alerts', label: 'Alerts', roles: ['owner'] }] },
   { id: 'fleet', name: 'Fleet & Logistics', blurb: 'Vehicles and papers, drivers, trips, fuel, service, vehicle requests and waybills', hue: '#0e6e8c', pages: [
     { to: '/fleet', label: 'Vehicles', also: ['/fleet/vehicles'] }, { to: '/fleet/requests', label: 'Vehicle requests' }, { to: '/fleet/trips', label: 'Trips' },
@@ -56,7 +56,7 @@ export const MODULES: Module[] = [
   { id: 'service', name: 'Service', blurb: 'Support cases and the knowledge base', hue: '#b03a5b', pages: [
     { to: '/cases', label: 'Support cases' }, { to: '/knowledge', label: 'Knowledge base' }] },
   { id: 'settings', name: 'Settings', blurb: 'Company details, team access and imports', hue: '#5b6670', pages: [
-    { to: '/settings', label: 'Settings & team', roles: ['accountant', 'hr'] }, { to: '/import', label: 'Import from spreadsheet', roles: ['accountant', 'hr', 'sales'] }] },
+    { to: '/settings', label: 'Settings & team', roles: ['accountant', 'hr'] }, { to: '/activity', label: 'Activity log', roles: ['accountant'] }, { to: '/settings/messaging', label: 'Telegram & email', roles: ['owner'] }, { to: '/import', label: 'Import from spreadsheet', roles: ['accountant', 'hr', 'sales'] }] },
   { id: 'hse', name: 'HSE & Compliance', blurb: 'Incidents, permits, inspections, compliance register and sustainability', hue: '#c2410c', pages: [
     { to: '/hse', label: 'Overview' }, { to: '/hse/incidents', label: 'Incidents' }, { to: '/hse/actions', label: 'Actions' },
     { to: '/hse/talks', label: 'Talks & inductions', also: ['/hse/inductions'] }, { to: '/hse/inspections', label: 'Inspections' }, { to: '/hse/permits', label: 'Permits' }, { to: '/hse/risks', label: 'Risks' },
