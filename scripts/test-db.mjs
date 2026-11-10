@@ -20,7 +20,7 @@ await db.exec(`
   insert into auth.users values ('11111111-1111-1111-1111-111111111111','owner@adom.com.gh'),
                                 ('22222222-2222-2222-2222-222222222222','outsider@other.com.gh');
 `);
-for (const f of ['0001_asnys.sql', '0002_asnys_v1_1.sql', '0003_asnys_v1_2.sql', '0004_asnys_v1_3.sql', '0005_asnys_v1_4.sql', '0006_asnys_v2_0.sql', '0007_asnys_v2_1.sql', '0008_asnys_v2_2.sql', '0009_asnys_v2_3.sql', '0010_asnys_v2_4.sql', '0011_asnys_v2_5.sql', '0012_asnys_v2_6.sql', '0013_asnys_v2_7.sql']) {
+for (const f of ['0001_asnys.sql', '0002_asnys_v1_1.sql', '0003_asnys_v1_2.sql', '0004_asnys_v1_3.sql', '0005_asnys_v1_4.sql', '0006_asnys_v2_0.sql', '0007_asnys_v2_1.sql', '0008_asnys_v2_2.sql', '0009_asnys_v2_3.sql', '0010_asnys_v2_4.sql', '0011_asnys_v2_5.sql', '0012_asnys_v2_6.sql', '0013_asnys_v2_7.sql', '0014_asnys_v2_8.sql', '0015_asnys_v2_8_1.sql', '0016_asnys_v2_9.sql', '0017_asnys_v3_0.sql', '0018_asnys_v3_1.sql']) {
   try { await db.exec(readFileSync(new URL('../supabase/migrations/' + f, import.meta.url), 'utf8')); }
   catch (e) { console.error('Migration ' + f + ' failed:', e.message, e.where || '', e.position || '', e.internalQuery || ''); process.exit(1); }
 }
@@ -38,7 +38,7 @@ ok(Number((await one(`select compute_paye(60000,'2026-10-31') v`)).v) === 17121.
 await as(OWNER);
 const cid = (await one(`select create_company('Adom Distributors Ltd','C0012345678','Accra') id`)).id;
 await db.query(`update companies set require_project_registration=false where id=$1`, [cid]); // the v2.3 project gate is tested on its own company
-ok((await one(`select count(*) n from accounts where company_id=$1`, [cid])).n == 57, 'Chart of accounts seeded (57 accounts)');
+ok((await one(`select count(*) n from accounts where company_id=$1`, [cid])).n == 58, 'Chart of accounts seeded (58 accounts)');
 
 const cust = (await one(`insert into customers (company_id,name) values ($1,'Kumasi Mart') returning id`, [cid])).id;
 const sup = (await one(`insert into suppliers (company_id,name) values ($1,'Tema Wholesale') returning id`, [cid])).id;
@@ -111,7 +111,7 @@ await db.query(`select post_manual_journal($1,'2026-10-01','Owner capital',$2::j
 const tb = await one(`select sum(debit) d, sum(credit) c from account_balances($1,'1900-01-01','2099-12-31')`, [cid]);
 ok(Number(tb.d) === Number(tb.c), `Trial balance balances (${tb.d} = ${tb.c})`);
 const oct = await one(`select count(*) n from account_balances($1,'2026-11-01','2026-11-30')`, [cid]);
-ok(oct.n == 57, 'Report lists every account even in an empty period');
+ok(oct.n == 58, 'Report lists every account even in an empty period');
 
 
 // ===================== v1.1 =====================
@@ -1506,6 +1506,503 @@ ok(seen.i == 0 && seen.c == 0 && seen.j == 0 && seen.e == 0, 'Another company\'s
 let denied = false;
 try { await db.query(`select post_invoice($1)`, [inv2]); } catch (e) { denied = /access|role/.test(e.message); }
 ok(denied, 'Another company\'s user cannot post documents');
+
+
+// v2.8: projects on hold until further notice
+{
+  await as(OWNER);
+  const hp = (await one(`insert into projects (company_id,name,customer_id,start_date,hourly_rate,manager_id) values ($1,'Substation upgrade (on hold)',null,current_date,0,$2) returning id`, [cid, PMU])).id;
+  await as(PMU);
+  await db.query(`select set_project_status($1,'hold','Client funding not released',current_date,false,null)`, [hp]);
+  let h = await one(`select status, hold_since, hold_reason, hold_review, actual_start from projects where id=$1`, [hp]);
+  ok(h.status === 'on_hold' && h.hold_since && h.hold_reason === 'Client funding not released' && h.hold_review === null && h.actual_start === null,
+     'A project that has not started can be put on hold until further notice, with its reason and date');
+  const nNotes = (await one(`select count(*)::int n from notifications where company_id=$1 and kind='project_hold'`, [cid])).n;
+  ok(nNotes > 0, 'Finance and the project manager are told when a project goes on hold');
+  let blockedPm = '';
+  try { await db.query(`insert into timesheets (company_id,project_id,employee_id,work_date,hours,status) values ($1,$2,$3,current_date,2,'submitted')`, [cid, hp, consultant]); } catch (e) { blockedPm = e.message; }
+  ok(/on hold/.test(blockedPm), 'No new time can be booked to a project on hold by the project team');
+  await as(OWNER);
+  let ownerBooked = true;
+  try { await db.query(`insert into timesheets (company_id,project_id,employee_id,work_date,hours,status) values ($1,$2,$3,current_date,1,'submitted')`, [cid, hp, consultant]); } catch (e) { ownerBooked = false; }
+  ok(ownerBooked, 'Finance, admins and owners can still book costs to a project on hold');
+  let pastReview = false;
+  try { await db.query(`select set_project_status($1,'hold_review',null,current_date,false,current_date - 1)`, [hp]); } catch (e) { pastReview = /past/.test(e.message); }
+  await db.query(`select set_project_status($1,'hold_review',null,current_date,false,current_date)`, [hp]);
+  const sent = (await one(`select run_project_hold_reminders() n`)).n;
+  const again = (await one(`select run_project_hold_reminders() n`)).n;
+  ok(pastReview && sent >= 1 && again === 0, 'A review date can be set (not in the past); a reminder goes out once when it arrives');
+  let cantComplete = false;
+  try { await db.query(`select set_project_status($1,'complete')`, [hp]); } catch (e) { cantComplete = /cannot/.test(e.message); }
+  await db.query(`select set_project_status($1,'resume')`, [hp]);
+  h = await one(`select status, hold_since, hold_review, actual_start from projects where id=$1`, [hp]);
+  ok(cantComplete && h.status === 'planned' && h.hold_since === null && h.hold_review === null && h.actual_start === null,
+     'A project that never started cannot be completed from hold; resuming returns it to Not started and clears the hold');
+  await db.query(`select set_project_status($1,'start')`, [hp]);
+  await db.query(`select set_project_status($1,'hold','Rainy season, site flooded',current_date,false,current_date + 60)`, [hp]);
+  await db.query(`select set_project_status($1,'resume')`, [hp]);
+  ok((await one(`select status from projects where id=$1`, [hp])).status === 'active', 'A started project resumes to In progress');
+}
+
+
+// v2.8.1: a single database link between tenders and projects
+{
+  const links = (await one(`select count(*)::int n from pg_constraint c where c.contype='f'
+    and ((c.conrelid='public.tenders'::regclass and c.confrelid='public.projects'::regclass) or (c.conrelid='public.projects'::regclass and c.confrelid='public.tenders'::regclass))`)).n;
+  ok(links === 1, 'Tenders and projects are joined by one database link, so the Tenders page can show each tender\'s project');
+}
+
+
+// v2.9: safety, compliance and sustainability
+{
+  const asUser = async (u, fn) => { await as(u); await db.exec('set role authenticated'); try { return await fn(); } finally { await db.exec('reset role'); } };
+  const err = async (fn) => { try { await fn(); return ''; } catch (e) { return e.message; } };
+  const seeded = await one(`select (select count(*)::int from esg_factors where company_id=$1) f, (select count(*)::int from hse_checklists where company_id=$1) c`, [cid]);
+  ok(seeded.f === 9 && seeded.c === 7, 'Every company starts with emission factors and seven inspection checklists');
+
+  // HSE officers
+  const staffHse = await asUser(STAFF, () => err(() => db.query(`select set_member_hse($1,$2,true)`, [cid, STAFF])));
+  await asUser(OWNER, () => db.query(`select set_member_hse($1,$2,true)`, [cid, ACC]));
+  ok(/owner or admin/.test(staffHse) && (await one(`select hse from memberships where company_id=$1 and user_id=$2`, [cid, ACC])).hse === true,
+     'Only an owner or admin can make someone an HSE officer');
+
+  // Incidents
+  const nm = await asUser(STAFF, () => one(`insert into hse_incidents (company_id,kind,description,location) values ($1,'near_miss','Unsecured ladder slipped','Tema substation') returning id, number, status`, [cid]));
+  const toAcc = (await one(`select count(*)::int n from notifications where user_id=$1 and kind='hse_incident'`, [ACC])).n;
+  const toOwner = (await one(`select count(*)::int n from notifications where user_id=$1 and kind='hse_incident'`, [OWNER])).n;
+  ok(/^INC-/.test(nm.number) && nm.status === 'reported' && toAcc === 1 && toOwner === 0,
+     'Anyone can report a near miss; it is numbered and the HSE officer is told (the managing director only for serious incidents)');
+  const lti = await asUser(STAFF, () => one(`insert into hse_incidents (company_id,kind,description,lost_days,reportable,authority) values ($1,'lost_time','Hand injury while pulling cable',4,true,'Department of Factories Inspectorate') returning id`, [cid]));
+  ok((await one(`select count(*)::int n from notifications where user_id=$1 and kind='hse_incident'`, [OWNER])).n === 1, 'A lost-time injury is escalated to owners and admins at once');
+  const staffClose = await asUser(STAFF, () => err(() => db.query(`select hse_incident_step($1,'close','x')`, [lti.id])));
+  const sneak = await asUser(STAFF, () => err(() => db.query(`update hse_incidents set status='closed' where id=$1`, [lti.id])));
+  ok(/HSE officer/.test(staffClose) && /Use Start investigation/.test(sneak), 'Staff cannot close an incident or change its status directly');
+  await asUser(ACC, () => db.query(`select hse_incident_step($1,'investigate')`, [lti.id]));
+  const noRoot = await asUser(ACC, () => err(() => db.query(`select hse_incident_step($1,'actions')`, [lti.id])));
+  await asUser(ACC, () => db.query(`update hse_incidents set root_cause='No cable-pulling procedure; gloves not issued' where id=$1`, [lti.id]));
+  await asUser(ACC, () => db.query(`select hse_incident_step($1,'actions')`, [lti.id]));
+  const act = await asUser(ACC, () => one(`insert into hse_actions (company_id,source,source_id,title,owner_id,due_date) values ($1,'incident',$2,'Write cable-pulling method statement',$3,current_date+14) returning id, number`, [cid, lti.id, STAFF]));
+  const closeOpen = await asUser(ACC, () => err(() => db.query(`select hse_incident_step($1,'close','Done')`, [lti.id])));
+  ok(/root cause/.test(noRoot) && /^CAPA-/.test(act.number) && /still open/.test(closeOpen), 'Moving on needs the root cause; closing waits for every action');
+  const noNote = await asUser(STAFF, () => err(() => db.query(`select hse_action_step($1,'done')`, [act.id])));
+  await asUser(STAFF, () => db.query(`select hse_action_step($1,'done','Method statement MS-014 issued and briefed')`, [act.id]));
+  const staffVerify = await asUser(STAFF, () => err(() => db.query(`select hse_action_step($1,'verify')`, [act.id])));
+  await asUser(ACC, () => db.query(`select hse_action_step($1,'verify','Checked on site 3 times')`, [act.id]));
+  ok(/what was done/.test(noNote) && /HSE officer/.test(staffVerify) && (await one(`select status from hse_actions where id=$1`, [act.id])).status === 'verified',
+     'The owner marks an action done with a note; only an HSE officer can verify it worked');
+  const selfAct = await asUser(ACC, () => one(`insert into hse_actions (company_id,title,owner_id) values ($1,'Buy cut-resistant gloves',$2) returning id`, [cid, ACC]));
+  await asUser(ACC, () => db.query(`select hse_action_step($1,'done','Bought 40 pairs')`, [selfAct.id]));
+  const selfVerify = await asUser(ACC, () => err(() => db.query(`select hse_action_step($1,'verify')`, [selfAct.id])));
+  ok(/Someone other/.test(selfVerify), 'Nobody verifies their own work');
+  const noAuthority = await asUser(ACC, () => err(() => db.query(`select hse_incident_step($1,'close','Closed')`, [lti.id])));
+  await asUser(ACC, () => db.query(`update hse_incidents set reported_to_authority_on=current_date, authority_ref='DFI/2026/118' where id=$1`, [lti.id]));
+  await asUser(ACC, () => db.query(`select hse_incident_step($1,'close','Procedure in place, team trained')`, [lti.id]));
+  ok(/reportable/.test(noAuthority) && (await one(`select status from hse_incidents where id=$1`, [lti.id])).status === 'closed',
+     'A reportable incident closes only once the report to the authority is recorded');
+
+  // Permits to work
+  const longP = await asUser(STAFF, () => err(() => db.query(`insert into hse_permits (company_id,kind,location,work_description,valid_from,valid_to) values ($1,'hot_work','Workshop','Welding',now(),now()+interval '10 days')`, [cid])));
+  const ptw = await asUser(STAFF, () => one(`insert into hse_permits (company_id,kind,location,work_description,isolations,valid_from,valid_to) values ($1,'electrical','Tema 33 kV bay 2','Replace CT','Bay 2 breaker racked out, locked LOTO-07',now(),now()+interval '10 hours') returning id, number`, [cid]));
+  const ownApprove = await asUser(STAFF, () => err(() => db.query(`select hse_permit_step($1,'approve')`, [ptw.id])));
+  await asUser(ACC, () => db.query(`select hse_permit_step($1,'approve','Isolation checked')`, [ptw.id]));
+  const editApproved = await asUser(STAFF, () => err(() => db.query(`update hse_permits set location='Bay 3' where id=$1`, [ptw.id])));
+  const closeNoNote = await asUser(STAFF, () => err(() => db.query(`select hse_permit_step($1,'close')`, [ptw.id])));
+  await asUser(STAFF, () => db.query(`select hse_permit_step($1,'close','CT replaced, locks removed, area clear')`, [ptw.id]));
+  ok(/7 days/.test(longP) && /^PTW-/.test(ptw.number) && /HSE officer or the project manager/.test(ownApprove) && /cannot be changed/.test(editApproved) && /area left safe/.test(closeNoNote)
+     && (await one(`select status from hse_permits where id=$1`, [ptw.id])).status === 'closed',
+     'Permits: at most 7 days; issued by an authorised person, never the requester; locked once issued; closed with a sign-off');
+  const accPtw = await asUser(ACC, () => one(`insert into hse_permits (company_id,kind,location,work_description,valid_from,valid_to) values ($1,'height','Roof','Fix gutter',now(),now()+interval '4 hours') returning id`, [cid]));
+  const selfIssue = await asUser(ACC, () => err(() => db.query(`select hse_permit_step($1,'approve')`, [accPtw.id])));
+  ok(/cannot approve a permit you asked for/.test(selfIssue), 'Even an HSE officer cannot issue their own permit');
+
+  // Inspections
+  const chk = (await one(`select id from hse_checklists where company_id=$1 and name='Site safety inspection'`, [cid])).id;
+  const ins = await asUser(STAFF, () => one(`insert into hse_inspections (company_id,checklist_id,title,location) values ($1,$2,'Weekly site inspection','Tema') returning id, number, results`, [cid, chk]));
+  const blank = await asUser(STAFF, () => err(() => db.query(`select complete_hse_inspection($1)`, [ins.id])));
+  const res = ins.results.map((r, i) => ({ ...r, result: i === 2 || i === 8 ? 'fail' : i === 13 ? 'na' : 'pass', note: i === 2 ? '2 workers without helmets' : null }));
+  await asUser(STAFF, () => db.query(`update hse_inspections set results=$2 where id=$1`, [ins.id, JSON.stringify(res)]));
+  const raised = (await asUser(STAFF, () => one(`select complete_hse_inspection($1) n`, [ins.id]))).n;
+  const insDone = await one(`select status, score from hse_inspections where id=$1`, [ins.id]);
+  const lockedIns = await asUser(STAFF, () => err(() => db.query(`update hse_inspections set notes='x' where id=$1`, [ins.id])));
+  ok(ins.results.length === 14 && /not answered/.test(blank) && raised === 2 && insDone.status === 'completed' && Number(insDone.score) === 84.6 && /cannot be changed/.test(lockedIns),
+     'An inspection copies its checklist, needs every item answered, scores 11 of 13 = 84.6% and raises an action for each failed item');
+
+  // Sustainability
+  const diesel = (await one(`select id from esg_factors where company_id=$1 and key='diesel_l'`, [cid])).id;
+  const grid = (await one(`select id from esg_factors where company_id=$1 and key='grid_kwh'`, [cid])).id;
+  const staffEsg = await asUser(STAFF, () => err(() => db.query(`insert into esg_entries (company_id,period,factor_id,quantity) values ($1,current_date,$2,100)`, [cid, diesel])));
+  const e1 = await asUser(ACC, () => one(`insert into esg_entries (company_id,period,factor_id,quantity,source_ref) values ($1,current_date,$2,1000,'Fuel bill B-0102') returning kg_co2e, period`, [cid, diesel]));
+  await asUser(ACC, () => db.query(`insert into esg_entries (company_id,period,factor_id,quantity) values ($1,current_date,$2,5000)`, [cid, grid]));
+  await asUser(ACC, () => db.query(`update esg_factors set kg_co2e=3 where id=$1`, [diesel]));
+  const sum = await asUser(ACC, () => db.query(`select * from esg_summary($1, date_trunc('month',current_date)::date, current_date)`, [cid]));
+  const byKey = Object.fromEntries(sum.rows.map(r => [r.factor_key, r]));
+  ok(/HSE officer, Finance/.test(staffEsg) && Number(e1.kg_co2e) === 2583.54 && String(new Date(e1.period).getDate()) === '1'
+     && Number(byKey.diesel_l.t_co2e) === 2.584 && byKey.diesel_l.scope === 1 && Number(byKey.grid_kwh.t_co2e) === 1.8 && byKey.grid_kwh.scope === 2,
+     'Fuel and electricity convert to tonnes of CO2e by scope (1,000 L diesel = 2.584 t; 5,000 kWh = 1.8 t); a later factor change does not rewrite past records');
+
+  // Safety performance
+  await asUser(ACC, () => db.query(`insert into hse_hours (company_id,period,hours,headcount,note) values ($1,current_date,200000,85,'Site labour and subcontractors')`, [cid]));
+  const st = await asUser(STAFF, () => one(`select * from hse_stats($1, date_trunc('month',current_date)::date, current_date)`, [cid]));
+  ok(Number(st.hours) >= 200000 && st.ltis === 1 && st.recordables === 1 && st.near_misses === 1 && st.lost_days === 4
+     && Math.abs(Number(st.ltifr) - 1e6 / Number(st.hours)) < 0.01 && Math.abs(Number(st.trir) - 2e5 / Number(st.hours)) < 0.01,
+     'Safety figures: LTIFR per 1,000,000 hours and TRIR per 200,000 hours worked');
+
+  // Compliance obligations and reminders
+  const staffObl = await asUser(STAFF, () => err(() => db.query(`insert into compliance_obligations (company_id,title) values ($1,'Fire certificate')`, [cid])));
+  const obl = await asUser(ACC, () => one(`insert into compliance_obligations (company_id,title,category,area,authority,expires_on,owner_id) values ($1,'Fire safety certificate','permit_licence','safety','Ghana National Fire Service',current_date-2,$2) returning id`, [cid, STAFF]));
+  const r1 = (await one(`select run_hse_reminders() n`)).n, r2 = (await one(`select run_hse_reminders() n`)).n;
+  const toStaff = (await one(`select count(*)::int n from notifications where user_id=$1 and kind='compliance_due'`, [STAFF])).n;
+  await asUser(STAFF, () => db.query(`select renew_obligation($1,current_date,current_date+365,'Certificate FS-2027-311')`, [obl.id]));
+  const renewed = await one(`select expires_on > current_date ok, reminded_for from compliance_obligations where id=$1`, [obl.id]);
+  ok(/compliance officer/.test(staffObl) && r1 >= 1 && r2 === 0 && toStaff === 1 && renewed.ok && renewed.reminded_for === null,
+     'The compliance register: expired items remind the owner once; the owner can renew with the new expiry');
+
+  // Policies
+  const staffPol = await asUser(STAFF, () => err(() => db.query(`insert into hse_policies (company_id,title) values ($1,'HSE policy')`, [cid])));
+  const pol = await asUser(OWNER, () => one(`insert into hse_policies (company_id,title,version) values ($1,'Health, Safety and Environment Policy','2026.1') returning id`, [cid]));
+  await asUser(STAFF, () => db.query(`select acknowledge_policy($1)`, [pol.id]));
+  await asUser(STAFF, () => db.query(`select acknowledge_policy($1)`, [pol.id]));
+  ok(/publish policies/.test(staffPol) && (await one(`select count(*)::int n from hse_policy_acks where policy_id=$1`, [pol.id])).n === 1,
+     'Policies are published by HSE, HR or management; each person acknowledges each version once');
+
+  // Isolation
+  const outSees = await asUser(OUT, () => one(`select (select count(*)::int from hse_incidents) i, (select count(*)::int from esg_entries) e`));
+  ok(outSees.i === 0 && outSees.e === 0, 'Another company sees none of these records');
+}
+
+
+// v2.9 site safety: toolbox talks, inductions and "no induction, no work"
+{
+  const asUser = async (u, fn) => { await as(u); await db.exec('set role authenticated'); try { return await fn(); } finally { await db.exec('reset role'); } };
+  const err = async (fn) => { try { await fn(); return ''; } catch (e) { return e.message; } };
+  await as(OWNER);
+  const sp = (await one(`insert into projects (company_id,name,start_date,hourly_rate,manager_id) values ($1,'Kpone substation',current_date,0,$2) returning id`, [cid, PMU])).id;
+  const emp = (await one(`insert into employees (company_id,full_name,basic_salary) values ($1,'Kojo Asare',3000) returning id`, [cid])).id;
+  await db.query(`insert into project_assignments (company_id,project_id,employee_id,employee_company_id,start_date) values ($1,$2,$3,$1,current_date)`, [cid, sp, emp]);
+  const tbt = await asUser(STAFF, () => one(`insert into hse_sessions (company_id,kind,project_id,topic,duration_min) values ($1,'toolbox',$2,'Working near live 33 kV equipment',15) returning id, number`, [cid, sp]));
+  const staffInd = await asUser(STAFF, () => err(() => db.query(`insert into hse_sessions (company_id,kind,project_id,topic) values ($1,'site_induction',$2,'Site induction')`, [cid, sp])));
+  const noPeople = await asUser(STAFF, () => err(() => db.query(`select record_hse_session($1)`, [tbt.id])));
+  await asUser(STAFF, () => db.query(`insert into hse_session_attendees (session_id,employee_id,name) values ($1,$2,''),($1,null,'Ama Owusu')`, [tbt.id, emp]));
+  const n = (await asUser(STAFF, () => one(`select record_hse_session($1) n`, [tbt.id]))).n;
+  const lockedTbt = await asUser(STAFF, () => err(() => db.query(`insert into hse_session_attendees (session_id,name) values ($1,'Late comer')`, [tbt.id])));
+  ok(/^TBT-/.test(tbt.number) && /HSE officer, HR or the project manager/.test(staffInd) && /attended/.test(noPeople) && n === 2 && /recorded/.test(lockedTbt)
+     && (await one(`select name from hse_session_attendees where session_id=$1 and employee_id=$2`, [tbt.id, emp])).name === 'Kojo Asare',
+     'Any supervisor records a toolbox talk with its attendance (names filled from staff records); inductions are given by HSE, HR or the project manager; a recorded list is locked');
+  // No induction, no work
+  await asUser(OWNER, () => db.query(`select set_induction_rules($1,true,12)`, [cid]));
+  const blocked = await err(() => db.query(`insert into timesheets (company_id,project_id,employee_id,work_date,hours) values ($1,$2,$3,current_date,8)`, [cid, sp, emp]));
+  const ind = await asUser(PMU, () => one(`insert into hse_sessions (company_id,kind,project_id,topic,held_on) values ($1,'site_induction',$2,'Kpone site induction',current_date) returning id, number`, [cid, sp]));
+  await asUser(PMU, () => db.query(`insert into hse_session_attendees (session_id,employee_id,name) values ($1,$2,'')`, [ind.id, emp]));
+  await asUser(PMU, () => db.query(`select record_hse_session($1)`, [ind.id]));
+  const vu = (await one(`select valid_until from hse_session_attendees where session_id=$1`, [ind.id])).valid_until;
+  const allowed = await err(() => db.query(`insert into timesheets (company_id,project_id,employee_id,work_date,hours) values ($1,$2,$3,current_date,8)`, [cid, sp, emp]));
+  const reg = (await asUser(STAFF, () => db.query(`select * from induction_register($1,$2)`, [cid, sp]))).rows;
+  await asUser(OWNER, () => db.query(`select set_induction_rules($1,false,12)`, [cid]));
+  ok(/no valid site induction/.test(blocked) && /^IND-/.test(ind.number) && allowed === '' && new Date(vu).getFullYear() === new Date().getFullYear() + 1
+     && reg.length === 1 && reg[0].state === 'valid',
+     'With "no induction, no work" on, time cannot be booked until the site induction is recorded; it is then valid for 12 months and shows in the induction register');
+  const st = await asUser(STAFF, () => one(`select toolbox_talks, toolbox_attendance, inductions, days_since_lti from hse_stats($1, date_trunc('month',current_date)::date, current_date, $2)`, [cid, sp]));
+  ok(st.toolbox_talks === 1 && st.toolbox_attendance === 2 && st.inductions === 1 && st.days_since_lti === 0, 'The project\'s safety figures count talks, attendance, inductions and days without a lost-time injury');
+}
+
+
+// v3.0 HR and payroll
+{
+  const asUser = async (u, fn) => { await as(u); await db.exec('set role authenticated'); try { return await fn(); } finally { await db.exec('reset role'); } };
+  const err = async (fn) => { try { await fn(); return ''; } catch (e) { return e.message; } };
+  const r2 = (x) => Math.round(x * 100) / 100;
+  await as(OWNER);
+  const c7 = (await one(`select create_company('Volta HR Test Ltd','C0099','Ho') id`)).id;
+  await db.query(`select add_member($1,'yaw@adom.com.gh','staff')`, [c7]);
+  await db.query(`select add_member($1,'kojo.pm@adom.com.gh','project_manager')`, [c7]);
+  const seeded = await one(`select (select count(*)::int from pay_components where company_id=$1) pc, (select count(*)::int from hr_checklists where company_id=$1) cl,
+    (select count(*)::int from public_holidays where company_id=$1) ph, (select count(*)::int from accounts where company_id=$1 and system_key='payroll_deductions') acc`, [c7]);
+  ok(seeded.pc >= 15 && seeded.cl === 2 && seeded.ph === 22 && seeded.acc === 1, 'A new company gets pay components, onboarding and exit checklists, Ghana public holidays for two years and a deductions account');
+  const hol = (await db.query(`select holiday::text d, name from public_holidays where company_id=$1 and extract(year from holiday)=2027 order by holiday`, [c7])).rows;
+  const hmap = Object.fromEntries(hol.map(h => [h.name, h.d]));
+  ok(hmap['Good Friday'] === '2027-03-26' && hmap['Easter Monday'] === '2027-03-29' && hmap["Farmers' Day"] === '2027-12-03' && hmap['Republic Day'] === '2027-07-01' && hmap["Founder's Day"] === '2027-09-21' && !hol.some(h => h.d === '2027-08-04'),
+     'Ghana 2027 holidays: Good Friday 26 Mar, Easter Monday 29 Mar, Republic Day 1 Jul, Founder\'s Day 21 Sep, Farmers\' Day 3 Dec; 4 August is not a holiday');
+
+  const comp = async (code) => (await one(`select id from pay_components where company_id=$1 and code=$2`, [c7, code])).id;
+  const mgr = (await one(`insert into employees (company_id,full_name,basic_salary,department,user_id,hire_date) values ($1,'Kojo Manager',9000,'Operations',$2,'2025-01-01') returning id`, [c7, PMU])).id;
+  const efua = (await one(`insert into employees (company_id,full_name,basic_salary,allowances,department,user_id,manager_id,hire_date) values ($1,'Efua Tetteh',5000,0,'Operations',$2,$3,'2025-01-01') returning id`, [c7, STAFF, mgr])).id;
+  const kofi = (await one(`insert into employees (company_id,full_name,basic_salary,department,hire_date) values ($1,'Kofi Asante',3000,'Finance','2027-01-16') returning id`, [c7])).id;
+  ok((await one(`select count(*)::int n from employee_events where employee_id=$1 and kind='hired'`, [efua])).n === 1, 'Joining is written to the employment history automatically');
+
+  // Pay components
+  await db.query(`insert into employee_pay_items (employee_id,component_id,amount,start_period) values ($1,$2,500,'2027-01-01'),($1,$3,200,'2027-01-01'),($1,$4,50,'2027-01-01')`,
+    [efua, await comp('HOUSING'), await comp('REIMBURSE'), await comp('UNION')]);
+  const housingId = await comp('HOUSING'), commissionId = await comp('COMMISSION');
+  const staffPay = await asUser(STAFF, () => err(() => db.query(`insert into employee_pay_items (employee_id,component_id,amount) values ($1,$2,9999)`, [efua, housingId])));
+  const jan = (await asUser(OWNER, () => one(`select prepare_payroll($1,'2027-01-01') id`, [c7]))).id;
+  const ef = await one(`select * from payslips where run_id=$1 and employee_id=$2`, [jan, efua]);
+  // gross 5000+500+200 = 5700; SSNIT 5.5% of 5000 = 275; chargeable 5000+500-275 = 5225; net = 5700-275-PAYE-50
+  const payeEf = Number((await one(`select compute_paye(5225,'2027-01-31') p`)).p);
+  ok(Number(ef.gross) === 5700 && Number(ef.ssnit_employee) === 275 && Number(ef.chargeable) === 5225 && Number(ef.paye) === payeEf && Number(ef.nontaxable) === 200
+     && Number(ef.deductions_other) === 50 && r2(Number(ef.net)) === r2(5700 - 275 - payeEf - 50) && /HR or Finance/.test(staffPay),
+     'Taxable allowances raise PAYE, a reimbursement is paid but not taxed, union dues come off net pay; staff cannot set their own pay');
+  const kf = await one(`select * from payslips where run_id=$1 and employee_id=$2`, [jan, kofi]);
+  ok(Number(kf.basic) === r2(3000 * 16 / 31) && Number(kf.days_paid) === 16, 'A joiner on 16 January is paid 16 of 31 days');
+  await asUser(OWNER, () => db.query(`select post_payroll($1)`, [jan]));
+  const je = await one(`select sum(l.debit)::numeric d, sum(l.credit)::numeric c, sum(l.credit) filter (where a.system_key='payroll_deductions')::numeric ded
+    from journal_lines l join journal_entries e on e.id=l.entry_id join accounts a on a.id=l.account_id where e.source_id=$1`, [jan]);
+  ok(Number(je.d) === Number(je.c) && Number(je.ded) === 50, 'Posting balances, and union dues are owed in 2260 Other payroll deductions payable');
+
+  // Back pay: a raise backdated to 1 January, entered after January was paid
+  const feb0 = (await asUser(OWNER, () => one(`select prepare_payroll($1,'2027-02-01') id`, [c7]))).id;
+  await asUser(OWNER, () => db.query(`select post_payroll($1)`, [feb0]));
+  await asUser(OWNER, () => db.query(`select change_salary($1,'2027-01-01',5600,null,'Annual review','increase')`, [efua]));
+  const mar = (await asUser(OWNER, () => one(`select prepare_payroll($1,'2027-03-01') id`, [c7]))).id;
+  const efm = await one(`select * from payslips where run_id=$1 and employee_id=$2`, [mar, efua]);
+  ok(Number(efm.basic) === 5600 && Number(efm.backpay) === 1200 && Number(efm.ssnit_employee) === r2((5600 + 1200) * 0.055),
+     'A raise backdated to January pays two months of arrears (GH₵1,200) in March, with SSNIT on the arrears');
+  await asUser(OWNER, () => db.query(`select post_payroll($1)`, [mar]));
+  const apr = (await asUser(OWNER, () => one(`select prepare_payroll($1,'2027-04-01') id`, [c7]))).id;
+  ok(Number((await one(`select backpay from payslips where run_id=$1 and employee_id=$2`, [apr, efua])).backpay) === 0, 'Back pay is paid once');
+  const hist = (await one(`select count(*)::int n from employee_events where employee_id=$1 and kind='salary_change' and confidential`, [efua])).n;
+  ok(hist === 1, 'The pay change is in the history, marked confidential');
+
+  // Off-cycle: commission paid after April payroll is posted; PAYE on the month's total
+  await asUser(OWNER, () => db.query(`select post_payroll($1)`, [apr]));
+  const off = (await asUser(OWNER, () => one(`select create_offcycle_run($1,'2027-04-15','interim','Q1 commission') id`, [c7]))).id;
+  await db.query(`insert into payroll_input_items (period,run_id,employee_id,component_id,amount) values ('2027-04-01',$1,$2,$3,3000)`, [off, efua, commissionId]);
+  await asUser(OWNER, () => db.query(`select recalc_run($1)`, [off]));
+  const regA = await one(`select chargeable, paye from payslips where run_id=$1 and employee_id=$2`, [apr, efua]);
+  const offS = await one(`select * from payslips where run_id=$1 and employee_id=$2`, [off, efua]);
+  const expect = Number((await one(`select compute_paye($1,'2027-04-30') p`, [Number(regA.chargeable) + 3000])).p) - Number(regA.paye);
+  const lockedItem = await err(() => db.query(`insert into payroll_input_items (company_id,period,employee_id,component_id,amount) values ($1,'2027-04-01',$2,$3,10)`, [c7, efua, commissionId]));
+  ok(Number(offS.gross) === 3000 && Number(offS.ssnit_employee) === 0 && r2(Number(offS.paye)) === r2(expect) && /already posted/.test(lockedItem),
+     'An off-cycle commission run taxes the commission at the month\'s top rate (PAYE on the month\'s total less tax already taken); posted months are locked');
+
+  await asUser(OWNER, () => db.query(`select post_payroll($1)`, [off]));
+  // Self-service payslips
+  const mine = await asUser(STAFF, () => one(`select my_payslips(null,$1) j`, [c7]));
+  const otherSees = await asUser(PMU, () => one(`select count(*)::int n, bool_and(x->'employee'->>'full_name' = 'Kojo Manager') own from jsonb_array_elements(my_payslips(null,$1)) x`, [c7]));
+  ok(mine.j.length === 5 && mine.j.every(x => x.employee.full_name === 'Efua Tetteh') && mine.j.some(x => x.items.some(i => i.code === 'UNION')) && otherSees.n === 4 && otherSees.own,
+     'Staff see only their own posted payslips (4 months and the off-cycle run), with every item; draft and other people\'s payslips are hidden');
+  const directPeek = await asUser(STAFF, () => one(`select count(*)::int n from payslips`));
+  ok(directPeek.n === 0, 'The payslips table itself stays closed to staff');
+
+  // Profile change requests
+  const badField = await asUser(STAFF, () => err(() => db.query(`select request_profile_change('{"basic_salary":"99999"}'::jsonb)`)));
+  const rq = (await asUser(STAFF, () => one(`select request_profile_change('{"bank_name":"Fidelity Bank","bank_account":"1050012345"}'::jsonb,'New account',$1) id`, [c7]))).id;
+  const staffApprove = await asUser(STAFF, () => err(() => db.query(`select decide_profile_change($1,true)`, [rq])));
+  await asUser(OWNER, () => db.query(`select decide_profile_change($1,true)`, [rq]));
+  ok(/cannot change basic_salary/.test(badField) && /Only HR/.test(staffApprove) && (await one(`select bank_account from employees where id=$1`, [efua])).bank_account === '1050012345',
+     'Staff ask to change their bank or contact details; HR approves and the record updates; pay cannot be self-edited');
+
+  // Leave: holidays, manager approval
+  const lv = (await asUser(STAFF, () => one(`insert into leave_requests (company_id,employee_id,leave_type,start_date,end_date,days) values ($1,$2,'annual','2027-03-25','2027-03-30',0) returning id, days`, [c7, efua])));
+  ok(Number(lv.days) === 2, 'Leave 25–30 March 2027 counts 2 working days (weekend, Good Friday and Easter Monday excluded)');
+  ok((await one(`select count(*)::int n from notifications where user_id=$1 and kind='leave_request'`, [PMU])).n === 1, 'The manager is told about the leave request');
+  const selfOk = await asUser(STAFF, () => err(() => db.query(`select decide_leave($1,true)`, [lv.id])));
+  await asUser(PMU, () => db.query(`select decide_leave($1,true,'Enjoy')`, [lv.id]));
+  ok(/Only HR or the employee's manager/.test(selfOk) && (await one(`select status from leave_requests where id=$1`, [lv.id])).status === 'approved', 'The employee\'s manager approves leave; nobody approves their own');
+  const halfOnHoliday = await asUser(STAFF, () => err(() => db.query(`insert into leave_requests (company_id,employee_id,leave_type,start_date,end_date,days) values ($1,$2,'annual','2027-03-26','2027-03-29',0)`, [c7, efua])));
+  ok(/weekends or public holidays/.test(halfOnHoliday), 'A request covering only holidays and a weekend is refused');
+  await db.query(`update leave_types set carry_over_max=5 where company_id=$1 and code='annual'`, [c7]);
+  await db.query(`insert into leave_requests (company_id,employee_id,leave_type,start_date,end_date,days,status) values ($1,$2,'annual','2026-06-01','2026-06-03',0,'approved')`, [c7, efua]);
+  const bal = await one(`select * from leave_balances($1,2027) where employee_id=$2 and leave_code='annual'`, [c7, efua]);
+  ok(Number(bal.carried) === 5 && Number(bal.entitlement) === 20 && Number(bal.taken) === 2 && Number(bal.remaining) === 18,
+     'Carry-over: 12 days unused in 2026, at most 5 carried; 15 + 5 = 20 for 2027, 2 taken, 18 left');
+  const kofiBal = await one(`select entitlement from leave_balances($1,2027) where employee_id=$2 and leave_code='annual'`, [c7, kofi]);
+  ok(Number(kofiBal.entitlement) === 15, 'A January joiner gets the full year');
+
+  // Announcements by department
+  await asUser(OWNER, () => db.query(`insert into announcements (company_id,title,body,audience,audience_value) values ($1,'Site safety week','All operations staff attend on Monday','department','Operations'),($1,'Finance closing','Month-end Friday','department','Finance')`, [c7]));
+  const seen = (await asUser(STAFF, () => db.query(`select title from my_announcements($1)`, [c7]))).rows.map(r => r.title);
+  const staffPost = await asUser(STAFF, () => err(() => db.query(`insert into announcements (company_id,title,body) values ($1,'x','y')`, [c7])));
+  ok(seen.length === 1 && seen[0] === 'Site safety week' && staffPost !== '', 'Announcements reach their department only; only HR posts them');
+
+  // Exit
+  const ex = (await asUser(OWNER, () => one(`select start_exit($1,'resignation','2027-04-01','2027-04-30','Moving abroad') id`, [kofi]))).id;
+  const tasks = (await one(`select count(*)::int n from employee_tasks where employee_id=$1 and kind='offboarding'`, [kofi])).n;
+  const early = await asUser(OWNER, () => err(() => db.query(`select complete_exit($1)`, [ex])));
+  await db.query(`update employee_tasks set status='done' where employee_id=$1`, [kofi]);
+  await asUser(OWNER, () => db.query(`select complete_exit($1)`, [ex]));
+  const kafter = await one(`select status, end_date::text from employees where id=$1`, [kofi]);
+  ok(tasks === 10 && /still open/.test(early) && kafter.status === 'inactive' && kafter.end_date === '2027-04-30', 'An exit creates the 10 leaving tasks, waits for them, then makes the employee inactive from the last day');
+
+  // Annual PAYE return
+  const ann = await asUser(OWNER, () => one(`select * from paye_annual($1,2027) where employee_id=$2`, [c7, efua]));
+  const sumPaye = await one(`select sum(s.paye + s.overtime_tax + s.bonus_tax)::numeric t, count(distinct r.period)::int m from payslips s join payroll_runs r on r.id=s.run_id where s.employee_id=$1 and r.status<>'draft'`, [efua]);
+  ok(Number(ann.total_tax) === Number(sumPaye.t) && ann.months === 4 && Number(ann.other_earnings) > 3000 && Number(ann.nontaxable) === 800, 'The annual PAYE return adds up every posted run (4 months, including the off-cycle run)');
+  const rep = await asUser(OWNER, () => one(`select hr_report($1,'2027-01-01','2027-04-30') j`, [c7]));
+  ok(rep.j.joiners === 1 && rep.j.leavers === 1 && rep.j.payroll_by_month.length === 4, 'The HR report counts joiners, leavers and payroll cost by month');
+}
+
+// ------------------------------------------------------------------ v3.1 Assets (Gulfaco features) and Fleet & Logistics
+{
+  const asUser = async (u, fn) => { await as(u); await db.exec('set role authenticated'); try { return await fn(); } finally { await db.exec('reset role'); } };
+  const err = async (fn) => { try { await fn(); return ''; } catch (e) { return e.message; } };
+  const notes = async (u, kind) => (await one(`select count(*)::int n from notifications where user_id=$1 and kind=$2`, [u, kind])).n;
+
+  await as(OWNER);
+  const c8 = (await one(`select create_company('Gulf Assets Test Ltd','C0088','Tema') id`)).id;
+  await db.query(`select add_member($1,'store@opening.com.gh','store')`, [c8]);
+  await db.query(`select add_member($1,'kojo.pm@adom.com.gh','project_manager')`, [c8]);
+  await db.query(`select add_member($1,'yaw@adom.com.gh','staff')`, [c8]);
+  const head = (await one(`select id from asset_locations where company_id=$1 and kind='head_office'`, [c8]))?.id;
+  ok(!!head, 'A new company starts with a Head office location');
+  const staffLoc = await asUser(STAFF, () => err(() => db.query(`insert into asset_locations (company_id,name) values ($1,'Sneaky')`, [c8])));
+  const tema = (await asUser(STORE, () => one(`insert into asset_locations (company_id,name,kind,region,manager_id) values ($1,'Tema site','site','Greater Accra',$2) returning id`, [c8, PMU]))).id;
+  ok(staffLoc !== '' && !!tema, 'Only the storekeeper adds locations, each with a manager');
+
+  const gen = (await asUser(OWNER, () => one(`select register_asset($1,$2::jsonb,'none') id`, [c8, JSON.stringify({ name: 'Generator 20kVA', cost: 45000, purchase_date: '2026-10-01', useful_life_months: 60 })]))).id;
+  await asUser(OWNER, () => db.query(`update assets set location_id=$2, manufacturer='Perkins', model='P22-5' where id=$1`, [gen, head]));
+    ok((await one(`select location from assets where id=$1`, [gen])).location === 'Head office', 'Choosing a location fills in the location name');
+
+  // Transfers
+  const staffSend = await asUser(STAFF, () => err(() => db.query(`select send_asset_transfer($1,$2)`, [gen, tema])));
+  const tr = (await asUser(STORE, () => one(`select send_asset_transfer($1,$2,'For the pour on Monday') id`, [gen, tema]))).id;
+  const inTransit = await one(`select state from assets where id=$1`, [gen]);
+  const outWhileMoving = await asUser(OWNER, () => err(() => db.query(`select set_asset_state($1,'ready')`, [gen])));
+  ok(/in transit/.test(outWhileMoving), 'An asset in transit cannot be checked out or have its status changed until the transfer is closed');
+  const staffRecv = await asUser(STAFF, () => err(() => db.query(`select close_asset_transfer($1,'receive')`, [tr])));
+  ok(/Only the storekeeper/.test(staffSend) && inTransit.state === 'transit' && (await notes(PMU, 'asset_transfer')) === 1 && /receiving/.test(staffRecv),
+     'A transfer puts the asset In transit and tells the receiving site manager; others cannot receive it');
+  await asUser(PMU, () => db.query(`select close_asset_transfer($1,'receive',null,'good')`, [tr]));
+  const arrived = await one(`select state, location, location_id from assets where id=$1`, [gen]);
+  ok(arrived.state === 'ready' && arrived.location === 'Tema site' && arrived.location_id === tema && (await one(`select status from asset_transfers where id=$1`, [tr])).status === 'received',
+     'The site manager confirms receipt; the asset is now ready at Tema site');
+  const tr2 = (await asUser(PMU, () => one(`select send_asset_transfer($1,$2) id`, [gen, head]))).id;
+  const noReason = await asUser(STORE, () => err(() => db.query(`select close_asset_transfer($1,'reject')`, [tr2])));
+  await asUser(PMU, () => db.query(`select close_asset_transfer($1,'recall','Still needed')`, [tr2]));
+  const back = await one(`select state, location from assets where id=$1`, [gen]);
+  ok(/why/.test(noReason) && back.state === 'ready' && back.location === 'Tema site', 'A rejection needs a reason; a recall brings the asset back to where it was');
+
+  // Requests through the site manager, then head office
+  const rq = (await asUser(STAFF, () => one(`select request_asset($1,'2 extension cables',null,null,null,current_date,current_date+7,$2,2) id`, [c8, tema]))).id;
+  const pmTold = await notes(PMU, 'asset_requested'), storeBefore = await notes(STORE, 'asset_requested');
+  await asUser(PMU, () => db.query(`select escalate_asset_request($1,'None on site')`, [rq]));
+  const pmAfter = await asUser(PMU, () => err(() => db.query(`select decide_asset_request($1,true)`, [rq])));
+  await asUser(STORE, () => db.query(`select decide_asset_request($1,true,'Sending from stores')`, [rq]));
+  const rqr = await one(`select status, escalated, quantity from asset_requests where id=$1`, [rq]);
+  ok(pmTold === 1 && storeBefore === 0 && (await notes(STORE, 'asset_requested')) === 1 && /head office/.test(pmAfter) && rqr.status === 'approved' && rqr.escalated && rqr.quantity === 2,
+     'A site request goes to the site manager first; once passed to head office only the storekeeper decides');
+  const rq2 = (await asUser(STAFF, () => one(`select request_asset($1,'Hard hats',null,null,null,null,null,$2) id`, [c8, tema]))).id;
+  await asUser(PMU, () => db.query(`select decide_asset_request($1,true,'Take from site box')`, [rq2]));
+  ok((await one(`select status from asset_requests where id=$1`, [rq2])).status === 'approved', 'The site manager can approve a request for their own site');
+
+  // Accessories, components and consumables
+  const toner = (await asUser(STORE, () => one(`insert into asset_items (company_id,kind,name,unit,min_qty) values ($1,'consumable','Printer toner','each',5) returning id`, [c8]))).id;
+  const charger = (await asUser(STORE, () => one(`insert into asset_items (company_id,kind,name,min_qty) values ($1,'accessory','Laptop charger',0) returning id`, [c8]))).id;
+  const yawEmp = (await one(`insert into employees (company_id,full_name,basic_salary,user_id,hire_date) values ($1,'Yaw Driver',3000,$2,'2025-01-01') returning id`, [c8, STAFF])).id;
+  await asUser(STORE, () => db.query(`select item_move($1,'receive',$2,10,null,null,null,null,180)`, [toner, head]));
+  await asUser(STORE, () => db.query(`select item_move($1,'transfer',$2,3,$3)`, [toner, head, tema]));
+  await asUser(STORE, () => db.query(`select item_move($1,'consume',$2,4)`, [toner, head]));
+  const lowBefore = await notes(STORE, 'low_stock');
+  await asUser(STORE, () => db.query(`select item_move($1,'consume',$2,2)`, [toner, head]));
+  const tooMany = await asUser(STORE, () => err(() => db.query(`select item_move($1,'consume',$2,5)`, [toner, head])));
+  const stock = (await db.query(`select l.name, s.qty from asset_item_stock s join asset_locations l on l.id=s.location_id where item_id=$1 order by l.name`, [toner])).rows;
+  ok(lowBefore === 0 && (await notes(STORE, 'low_stock')) === 1 && /Only 1/.test(tooMany) && stock.length === 2 && Number(stock[0].qty) === 1 && Number(stock[1].qty) === 3,
+     'Consumables are kept per location (Head office 1, Tema 3); dropping below the minimum of 5 raises one low-stock alert; you cannot use more than you have');
+  const tonerOut = await asUser(STORE, () => err(() => db.query(`select item_move($1,'checkout',$2,1,null,$3)`, [toner, head, yawEmp])));
+  await asUser(STORE, () => db.query(`select item_move($1,'receive',$2,3)`, [charger, head]));
+  await asUser(STORE, () => db.query(`select item_move($1,'checkout',$2,2,null,$3)`, [charger, head, yawEmp]));
+  const co = (await one(`select id from asset_item_checkouts where item_id=$1`, [charger])).id;
+  await asUser(STORE, () => db.query(`select item_move($1,'checkin',$2,1,null,null,null,null,null,null,$3)`, [charger, head, co]));
+  const cor = await one(`select status, returned_qty from asset_item_checkouts where id=$1`, [co]);
+  ok(/used up/.test(tonerOut) && cor.status === 'out' && Number(cor.returned_qty) === 1 && Number((await one(`select item_total($1) t`, [charger])).t) === 2,
+     'Accessories are checked out to people and returned in part; consumables cannot be checked out');
+
+  // Software licences
+  const lic = (await asUser(STORE, () => one(`insert into software_licences (company_id,name,seats,product_key,expires_on) values ($1,'AutoCAD LT',2,'XXXX-1234',current_date+20) returning id`, [c8]))).id;
+  await asUser(STORE, () => db.query(`insert into licence_seats (licence_id,employee_id) values ($1,$2),($1,$2)`, [lic, yawEmp]));
+  const third = await asUser(STORE, () => err(() => db.query(`insert into licence_seats (licence_id,asset_id) values ($1,$2)`, [lic, gen])));
+  ok(/All 2 seats/.test(third), 'A licence cannot be given out beyond its seats');
+
+  // Fleet: vehicles and the transport officer
+  const staffVeh = await asUser(STAFF, () => err(() => db.query(`insert into vehicles (company_id,reg_no) values ($1,'GX 1-25')`, [c8])));
+  const veh = (await asUser(STORE, () => one(`insert into vehicles (company_id,reg_no,make,model,vehicle_type,fuel_type,expected_km_per_l,service_interval_km,driver_id)
+    values ($1,'GR 1234-25','Toyota','Hilux','pickup','diesel',8,5000,$2) returning id`, [c8, yawEmp]))).id;
+  await db.query(`update memberships set transport=true where company_id=$1 and user_id=$2`, [c8, PMU]);
+  const pmVeh = (await asUser(PMU, () => one(`insert into vehicles (company_id,reg_no,vehicle_type) values ($1,'GT 77-24','truck') returning id`, [c8]))).id;
+  ok(/transport officer/.test(staffVeh) && !!veh && !!pmVeh, 'Only the transport officer (or storekeeper, Finance, admin) keeps the vehicle file; the transport tick works');
+  const ownerTick = await asUser(STAFF, () => err(() => db.query(`select set_member_transport($1,$2,true)`, [c8, STAFF])));
+  ok(/owner or admin/.test(ownerTick), 'Only an owner or admin can make someone a transport officer');
+
+  // Vehicle requests
+  const vr = (await asUser(STAFF, () => one(`insert into vehicle_requests (company_id,purpose,destination,from_at,to_at) values ($1,'Deliver blocks','Tema site',now()+interval '1 day',now()+interval '1 day 4 hours') returning id, number`, [c8])));
+  ok(/^VRQ-/.test(vr.number) && (await notes(STORE, 'vehicle_request')) === 1, 'Anyone can request a vehicle; the transport officer is told');
+  await asUser(STORE, () => db.query(`select decide_vehicle_request($1,'approve',$2)`, [vr.id, veh]));
+  const vr2 = (await asUser(STAFF, () => one(`insert into vehicle_requests (company_id,purpose,from_at,to_at) values ($1,'Bank run',now()+interval '1 day 1 hour',now()+interval '1 day 2 hours') returning id`, [c8]))).id;
+  const clash = await asUser(STORE, () => err(() => db.query(`select decide_vehicle_request($1,'approve',$2)`, [vr2, veh])));
+  const sneaky = await asUser(STAFF, () => err(() => db.query(`update vehicle_requests set status='approved' where id=$1`, [vr2])));
+  ok(/already booked/.test(clash) && /Approve, Decline or Cancel/.test(sneaky) && (await one(`select driver_id from vehicle_requests where id=$1`, [vr.id])).driver_id === yawEmp,
+     'An approved vehicle cannot be double-booked, the assigned driver defaults to the vehicle\'s driver, and nobody approves by editing');
+
+  // Trips
+  const trip = (await asUser(STORE, () => one(`insert into vehicle_trips (company_id,vehicle_id,driver_id,purpose,origin,destination,request_id) values ($1,$2,$3,'Deliver blocks','Yard','Tema site',$4) returning id`, [c8, veh, yawEmp, vr.id]))).id;
+  await asUser(STAFF, () => db.query(`select trip_step($1,'start',1000)`, [trip]));
+  const backwards = await asUser(STAFF, () => err(() => db.query(`select trip_step($1,'finish',900)`, [trip])));
+  const busy = (await one(`select status from vehicles where id=$1`, [veh])).status;
+  await asUser(STAFF, () => db.query(`select trip_step($1,'finish',1150)`, [trip]));
+  const t = await one(`select distance_km, status from vehicle_trips where id=$1`, [trip]);
+  const vv = await one(`select odometer, status from vehicles where id=$1`, [veh]);
+  ok(busy === 'in_use' && /at least 1000/.test(backwards) && Number(t.distance_km) === 150 && Number(vv.odometer) === 1150 && vv.status === 'available'
+     && (await one(`select status from vehicle_requests where id=$1`, [vr.id])).status === 'done',
+     'The driver starts and finishes the trip: 150 km logged, mileage only goes forward, the vehicle is busy during it and the request is closed');
+
+  // Fuel
+  await asUser(STAFF, () => db.query(`insert into vehicle_fuel (vehicle_id,litres,cost,odometer,filled_on) values ($1,50,1000,1150,current_date)`, [veh]));
+  await asUser(STAFF, () => db.query(`insert into vehicle_fuel (vehicle_id,litres,cost,odometer,filled_on) values ($1,40,800,1550,current_date)`, [veh]));
+  await asUser(STAFF, () => db.query(`insert into vehicle_fuel (vehicle_id,litres,cost,odometer,filled_on) values ($1,40,800,1750,current_date)`, [veh]));
+  const fills = (await db.query(`select km_per_l, flagged from vehicle_fuel where vehicle_id=$1 order by odometer`, [veh])).rows;
+  const lower = await asUser(STAFF, () => err(() => db.query(`insert into vehicle_fuel (vehicle_id,litres,odometer) values ($1,10,1200)`, [veh])));
+  const other = await asUser(PMU, () => err(() => db.query(`insert into vehicle_fuel (vehicle_id,litres,odometer) values ($1,10,1880)`, [veh])));
+  ok(fills[0].km_per_l === null && Number(fills[1].km_per_l) === 10 && !fills[1].flagged && Number(fills[2].km_per_l) === 5 && fills[2].flagged
+     && (await notes(STORE, 'fuel_flag')) === 1 && /lower/.test(lower) && other === '',
+     'Fuel log works out km per litre (10, then 5); 5 km/l against 8 expected is flagged to the transport officer; a lower mileage is refused');
+  const esg = await one(`select count(*)::int n, sum(kg_co2e)::numeric kg from esg_entries where company_id=$1 and source_ref like 'Fuel log%'`, [c8]);
+  ok(esg.n === 4 && Math.abs(Number(esg.kg) - 140 * 2.58354) < 0.01, 'Every litre of diesel also goes into the sustainability (CO2) figures');
+
+  // Service by mileage
+  await asUser(STORE, () => db.query(`insert into vehicle_services (company_id,vehicle_id,odometer,kind,description,cost,downtime_days) values ($1,$2,1900,'service','5,000 km service',1500,1)`, [c8, veh]));
+  const sv = await one(`select last_service_km, odometer from vehicles where id=$1`, [veh]);
+  ok(Number(sv.last_service_km) === 1900 && Number(sv.odometer) === 1900, 'A service updates the vehicle\'s last service and mileage');
+
+  // Documents and licence reminders
+  await asUser(STORE, () => db.query(`insert into vehicle_documents (company_id,vehicle_id,kind,reference,expires_on,cost,issued_on) values ($1,$2,'roadworthy','RW-889',current_date+10,250,current_date-355),($1,$2,'insurance','POL-1',current_date+200,3200,current_date-165)`, [c8, veh]));
+  await asUser(STORE, () => db.query(`insert into drivers (company_id,employee_id,licence_no,licence_class,licence_expiry) values ($1,$2,'DL-1','B',current_date+15)`, [c8, yawEmp]));
+  const n1 = Number((await one(`select run_fleet_reminders() n`)).n);
+  const n2 = Number((await one(`select run_fleet_reminders() n`)).n);
+  ok(n1 >= 3 && n2 === 0 && (await notes(STORE, 'fleet_document')) === 1 && (await notes(STAFF, 'driver_licence')) === 1 && (await notes(STORE, 'licence_expiry')) === 1,
+     'Roadworthy, driving licence and software licence expiry reminders go out once, not every day');
+  await asUser(STORE, () => db.query(`insert into vehicle_documents (company_id,vehicle_id,kind,reference,expires_on) values ($1,$2,'roadworthy','RW-990',current_date+375)`, [c8, veh]));
+  const rep0 = await asUser(OWNER, () => one(`select fleet_report($1,current_date-30,current_date) j`, [c8]));
+  ok(!rep0.j.documents_due.some(d => d.kind === 'roadworthy'), 'Renewing the roadworthy clears it from the due list');
+
+  // Waybills, hired transport and proof of delivery
+  const wb = (await asUser(PMU, () => one(`insert into waybills (company_id,kind,transport,from_place,to_place,transport_cost) values ($1,'delivery','own','Head office','Tema site',0) returning id, number`, [c8])));
+  await asUser(PMU, () => db.query(`insert into waybill_lines (waybill_id,description,qty,unit) values ($1,'Cement 50kg',100,'bags'),($1,'Rebar 12mm',40,'lengths')`, [wb.id]));
+  const noVeh = await asUser(PMU, () => err(() => db.query(`select waybill_step($1,'dispatch')`, [wb.id])));
+  await asUser(PMU, () => db.query(`update waybills set vehicle_id=$2, driver_id=$3 where id=$1`, [wb.id, veh, yawEmp]));
+  await asUser(PMU, () => db.query(`select waybill_step($1,'dispatch')`, [wb.id]));
+  const fixed = await asUser(PMU, () => err(() => db.query(`insert into waybill_lines (waybill_id,description,qty) values ($1,'Extra',1)`, [wb.id])));
+  const noName = await asUser(STAFF, () => err(() => db.query(`select waybill_step($1,'deliver')`, [wb.id])));
+  const line = (await one(`select id from waybill_lines where waybill_id=$1 and description like 'Cement%'`, [wb.id])).id;
+  const res = (await asUser(STAFF, () => one(`select waybill_step($1,'deliver','Ama Site Clerk','5 bags torn',$2::jsonb) s`, [wb.id, JSON.stringify([{ id: line, delivered_qty: 95 }])]))).s;
+  ok(/^WB-/.test(wb.number) && /Choose the vehicle/.test(noVeh) && /fixed/.test(fixed) && /received/.test(noName) && res === 'partial',
+     'A waybill needs a vehicle to dispatch, its lines are fixed once on the road, and the driver records who received it; 95 of 100 bags is a short delivery');
+  const hired = (await asUser(STORE, () => one(`insert into waybills (company_id,transport,from_place,to_place,transport_cost,truck_reg) values ($1,'hired','Takoradi port','Head office',4500,'AS 4455-19') returning id`, [c8]))).id;
+  await asUser(STORE, () => db.query(`insert into waybill_lines (waybill_id,description,qty) values ($1,'Steel container',1)`, [hired]));
+  ok((await asUser(STORE, () => one(`select waybill_step($1,'dispatch') s`, [hired]))).s === 'dispatched', 'Hired transport is dispatched with the truck registration and its cost');
+
+  // Report
+  await db.query(`update waybills set project_id=(select id from projects where company_id=$1 limit 1) where id=$2`, [c8, wb.id]);
+  const rep = await asUser(OWNER, () => one(`select fleet_report($1,current_date-30,current_date) j`, [c8]));
+  const hv = rep.j.vehicles.find(v => v.reg_no === 'GR 1234-25');
+  ok(Number(hv.km) === 150 && Number(hv.litres) === 140 && Number(hv.fuel_cost) === 2600 && Number(hv.service_cost) === 1500 && hv.flags === 1 && Number(hv.downtime) === 1,
+     'The fleet report gives distance, fuel, service cost, downtime and fuel flags per vehicle');
+  ok(rep.j.licences_due.length === 1, 'Drivers whose licences expire within 30 days are listed');
+
+  // Telegram is optional
+  await db.query(`insert into company_telegram (company_id,bot_token,chat_id,enabled) values ($1,'123:abc','-100',true)`, [c8]);
+  const tg = await asUser(OWNER, () => err(() => db.query(`select test_telegram($1)`, [c8])));
+  const tgStaff = await asUser(STAFF, () => err(() => db.query(`select test_telegram($1)`, [c8])));
+  ok(/pg_net/.test(tg) && /owner or admin/.test(tgStaff), 'Telegram alerts need pg_net; everything else works without it');
+}
 
 console.log(failures ? `\n${failures} check(s) failed` : '\nAll checks passed');
 process.exit(failures ? 1 : 0);
