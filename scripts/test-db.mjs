@@ -20,7 +20,7 @@ await db.exec(`
   insert into auth.users values ('11111111-1111-1111-1111-111111111111','owner@adom.com.gh'),
                                 ('22222222-2222-2222-2222-222222222222','outsider@other.com.gh');
 `);
-for (const f of ['0001_asnys.sql', '0002_asnys_v1_1.sql', '0003_asnys_v1_2.sql', '0004_asnys_v1_3.sql', '0005_asnys_v1_4.sql', '0006_asnys_v2_0.sql', '0007_asnys_v2_1.sql', '0008_asnys_v2_2.sql', '0009_asnys_v2_3.sql', '0010_asnys_v2_4.sql', '0011_asnys_v2_5.sql', '0012_asnys_v2_6.sql', '0013_asnys_v2_7.sql', '0014_asnys_v2_8.sql', '0015_asnys_v2_8_1.sql', '0016_asnys_v2_9.sql', '0017_asnys_v3_0.sql', '0018_asnys_v3_1.sql']) {
+for (const f of ['0001_asnys.sql', '0002_asnys_v1_1.sql', '0003_asnys_v1_2.sql', '0004_asnys_v1_3.sql', '0005_asnys_v1_4.sql', '0006_asnys_v2_0.sql', '0007_asnys_v2_1.sql', '0008_asnys_v2_2.sql', '0009_asnys_v2_3.sql', '0010_asnys_v2_4.sql', '0011_asnys_v2_5.sql', '0012_asnys_v2_6.sql', '0013_asnys_v2_7.sql', '0014_asnys_v2_8.sql', '0015_asnys_v2_8_1.sql', '0016_asnys_v2_9.sql', '0017_asnys_v3_0.sql', '0018_asnys_v3_1.sql', '0019_asnys_v3_1_1.sql']) {
   try { await db.exec(readFileSync(new URL('../supabase/migrations/' + f, import.meta.url), 'utf8')); }
   catch (e) { console.error('Migration ' + f + ' failed:', e.message, e.where || '', e.position || '', e.internalQuery || ''); process.exit(1); }
 }
@@ -1996,6 +1996,25 @@ ok(denied, 'Another company\'s user cannot post documents');
   ok(Number(hv.km) === 150 && Number(hv.litres) === 140 && Number(hv.fuel_cost) === 2600 && Number(hv.service_cost) === 1500 && hv.flags === 1 && Number(hv.downtime) === 1,
      'The fleet report gives distance, fuel, service cost, downtime and fuel flags per vehicle');
   ok(rep.j.licences_due.length === 1, 'Drivers whose licences expire within 30 days are listed');
+
+  // v3.1.1: admins hear too; reminders at 30 days, 7 days, expiry and weekly after
+  ok((await notes(OWNER, 'fleet_document')) >= 1, 'The owner/admin is reminded about vehicle papers as well as the transport officer');
+  const veh2 = (await asUser(STORE, () => one(`insert into vehicles (company_id,reg_no,vehicle_type) values ($1,'GE 9-26','crane') returning id`, [c8]))).id;
+  const insp = (await asUser(STORE, () => one(`insert into vehicle_documents (company_id,vehicle_id,kind,reference,expires_on) values ($1,$2,'inspection','LOLER-7',current_date+25) returning id`, [c8, veh2]))).id;
+  const stage = async (days, last) => { await db.query(`update vehicle_documents set expires_on=current_date+$2::int where id=$1`, [insp, days]); await db.query(`update vehicle_documents set reminded_for=$2::date where id=$1`, [insp, last]); return Number((await one(`select run_fleet_reminders() n`)).n); };
+  const first = Number((await one(`select run_fleet_reminders() n`)).n);
+  const s7 = await stage(6, new Date(Date.now() - 20 * 864e5).toISOString().slice(0, 10));
+  const sNo = await stage(5, new Date(Date.now() - 1 * 864e5).toISOString().slice(0, 10));
+  const sExp = await stage(0, new Date(Date.now() - 3 * 864e5).toISOString().slice(0, 10));
+  const sWeek = await stage(-10, new Date(Date.now() - 8 * 864e5).toISOString().slice(0, 10));
+  const sQuiet = await stage(-10, new Date(Date.now() - 2 * 864e5).toISOString().slice(0, 10));
+  await db.query(`update vehicle_documents set expires_on=current_date+40 where id=$1`, [insp]);
+  ok((await one(`select reminded_for from vehicle_documents where id=$1`, [insp])).reminded_for === null, 'Changing the expiry date starts the reminders again');
+  ok(first === 1 && s7 === 1 && sNo === 0 && sExp === 1 && sWeek === 1 && sQuiet === 0,
+     'A statutory inspection is reminded at the first warning, again in the last 7 days, on the day it expires, then weekly while expired — not every day');
+  await db.query(`update companies set fleet_reminder_days=60 where id=$1`, [c8]);
+  await asUser(STORE, () => db.query(`insert into vehicle_documents (company_id,vehicle_id,kind,expires_on) values ($1,$2,'insurance',current_date+50)`, [c8, veh2]));
+  ok(Number((await one(`select run_fleet_reminders() n`)).n) === 2, 'The company can warn earlier: with 60 days, papers due in 40 and 50 days are both reminded');
 
   // Telegram is optional
   await db.query(`insert into company_telegram (company_id,bot_token,chat_id,enabled) values ($1,'123:abc','-100',true)`, [c8]);
