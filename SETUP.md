@@ -485,6 +485,67 @@ select cron.schedule('asnys-cash-reminders', '10 6 * * *', $$select public.run_a
 Advances are not netted off later payments automatically. Where the contract recovers the advance from interim payments, add a deduction line on those invoices.
 
 
+## What's new in v3.8 — Gulfaco's notes of 24 Nov 2026
+
+Database: `RUN-THIS-IN-SUPABASE.sql` (contains 0018–0026), or `supabase/migrations/0026_asnys_v3_8.sql` after 0025.
+
+- **Who does what**: each duty has *what to do*, *what not to do* and *when*; every member of staff can read it (Projects and My work).
+- **Registering a tender**: choose **+ New client** to create the client (name, TIN, contact) on the spot; after saving, the tender page offers **Start contract draft**.
+- **Supplier onboarding**: the supplier page lists every document as a row to attach (business registration, incorporation, VAT, ISO, HSE policy, quality policy, BoG exemption letter, tax exemption, and *Others*, which repeats as each one is filled). The *Add supplier* form takes the attachments straight away.
+- **Contract types and client sectors**: pick from the list or **+ Add new…** to create your own (e.g. Framework agreement, Water and sanitation).
+
+## What's new in v3.7 — Gulfaco's notes of 18 Nov 2026
+
+Database: `RUN-THIS-IN-SUPABASE.sql` (contains 0018–0025), or `supabase/migrations/0025_asnys_v3_7.sql` after 0024.
+
+- **Who does what** (Projects and My work → Who does what): the project-cycle duties and deadlines on their own page, readable by every member of staff.
+- **Tenders → contracts**: *Start contract draft* from any open tender; on award the draft becomes the active contract. Contracts keep **numbered drafts** (Draft 1, 2…). Contract type (goods, works, services, EPC, consultancy) and client sector (oil and gas, power and energy, mining, manufacturing…) on tenders, contracts and customers; contract currency is a drop-down.
+- **One contract or award, several projects**: *Register another project* on the tender (with its share of the value); contracts list and link their projects.
+- **Purchase orders**: *Change project* before anything is received or billed (with a reason, in the activity log).
+- **Supplier onboarding** (Expenses & Purchasing): vendor / subcontractor type, Ghana Card, what they supply, full bank (name, branch, account name and number, SWIFT, address) and MoMo (network, number, name); documents with reference and expiry; required documents per type (*Onboarding rules*); Finance approves, rejects or suspends. Existing suppliers start as approved; new ones as pending. Expiry reminders 30 days ahead.
+- **Branches & cost centres** tab under Accounts.
+- **Policies**: HSE policies (HSE module) and HR & Admin policies and compliance (HR module: labour and HR administration, legal and corporate, IT, data protection, anti-bribery…) kept apart; document numbers generated from the company's **numbering procedure** (e.g. `{CO}-{AREA}-POL-{SEQ}` → GUF-HSE-POL-001); "Other" asks what it is; *Upload several* loads many policy files at once.
+- **Sustainability**: choose the sustainability year; Scope 1, 2 and 3 dashboards (monthly trend, main sources, by project).
+
+## What's new in v3.6 — Bank of Ghana rates and month-end revaluation
+
+Database: `RUN-THIS-IN-SUPABASE.sql` (contains 0018–0024), or `supabase/migrations/0024_asnys_v3_6.sql` after 0023. Needs **pg_net** (and **pg_cron** for the daily schedule: Database → Extensions).
+
+- Every working day at 15:00 and 17:00 (Ghana time) the `asnys-m365` function fetches the BoG interbank table (buying, mid, selling) and keeps the history. Source: AllRatesToday (republishes the BoG table; add the free key as the secret `ALLRATESTODAY_KEY`), with the BoG web page as backup. If both fail, Finance is told and the last rates stay in use.
+- Settings → Foreign currencies and Bank of Ghana rates: BoG buying/mid/selling per currency, *Fetch BoG rates now*, untick *Automatic* to type a currency's rate yourself.
+- New invoices, bills, quotes, credit notes and payments fill in the BoG **mid-rate of the document's date** (weekends use Friday's); staff can change it. Books and reports stay in GH₵.
+- Settings → Month-end exchange revaluation: preview and post; unpaid foreign-currency invoices and bills are restated at the BoG rate, the unrealised gain/loss goes to 4800 and is reversed the next day. Undo available. Foreign-currency bank balances are not revalued (bank accounts are kept in GH₵ only).
+
+## What's new in v3.5 — QuickBooks-style sales and accounting
+
+Database: `RUN-THIS-IN-SUPABASE.sql` from the update (contains 0018–0023), or `supabase/migrations/0023_asnys_v3_5.sql` after 0022.
+
+- **+ New** button in the top bar: invoice, receive payment, sales receipt, quote, credit note, customer, bill, pay bills, purchase order, supplier, expense, deposit, transfer, bank feed, journal.
+- **Receive payment** (Sales): one cheque/transfer/MoMo over several invoices, into the bank account you choose, with WHT deducted per invoice; any extra is kept as the customer's credit (2500 Customer deposits and credits) and applied to later invoices. Receipts are numbered RCP and can be voided.
+- **Sales receipt**: a cash sale paid on the spot, recorded and paid in one step (not blocked by strict invoices); prints as "Sales receipt".
+- **Pay bills** (Expenses & Purchasing): tick several bills, pay from one account; withholding tax kept back at each supplier's rate into 2270 Withholding tax payable. Batches are numbered BPB.
+- **Bank feed** (Accounts): import the bank or MoMo statement (CSV/Excel). Each line is matched to an entry already in the books, to an open invoice (also when paid net of WHT) or bill, or posted with a rule (e.g. "ECG" → 6200 Electricity). Duplicates are skipped on re-import.
+- **Reports**: Cash flow (direct), Creditors ageing, Sales by customer, Sales by product, Profit by project, Profit by customer.
+
+## What's new in v3.4 — Gulfaco: numbering, tax, invoices, milestones, roles, security
+
+Database: run `RUN-THIS-IN-SUPABASE.sql` from the update (it contains 0018–0022 and is safe to run twice), or `supabase/migrations/0022_asnys_v3_4.sql` after 0021.
+
+- **Numbering**: Settings → Document numbering. Company code in front of every number (`GUF-INV-00001`); change the letters and next number per document. Requests: **SR** service, **ADR** procurement, **MRO** material from store.
+- **Customers and suppliers**: TIN required, contact person (name, phone, email), VAT position (standard, exempt, zero-rated, diplomatic, free zone) with certificate and expiry, withholding-tax agent and rate, VAT withholding agent, tax note.
+- **Invoices**: tied to a quotation, contract, project/milestone or the customer's PO; reference required; VAT on/off; customer's WHT shown; **Pay into** bank account; logo, PO, reference and contract on the PDF. Settings → Invoice rules → *Strict invoices* enforces this on posting. Receive payment records the WHT deducted and the certificate number (account 1285 Withholding tax receivable).
+- **Bank accounts**: Settings → Bank accounts for invoices; a USD invoice picks the USD account automatically.
+- **Payment milestones** (Projects → Billing): % of contract, bill when work done reaches %, payment days; template 20/30/40/10; *Check progress* marks them ready and tells Finance and the PM (also daily).
+- **Requests**: several items per SR/ADR, details per item, attachments (PDF, Excel, Word, photos).
+- **Stock**: each item is for sale, for use in the work, or both, and has a home store. Internal items are hidden on invoices; for-sale items are hidden on issues to projects.
+- **HR**: employment type *Subcontractor* with firm, trade and ID; never on payroll.
+- **Exchange rates** are typed in on every invoice, bill and payment.
+- **Custom roles** (Settings → Roles): tick modules and pages, *Can approve* and *Can void* per module; give people several roles. Staff with custom roles see only what is ticked.
+- **Void, never delete**: numbered entries cannot be deleted; void with a reason. Owners/admins can **Restore** a voided entry.
+- **Security & backup** (Settings): 2-step sign-in (turn on TOTP in Supabase → Authentication → Multi-factor), required per role; daily OneDrive backup; download a backup.
+- **Microsoft 365**: the `asnys-m365` edge function (Verify JWT **off**) sends email, makes backups and sends *Forgot password* links. Sign-in by a 10-year certificate made in Settings → Telegram & email. Secrets: `MS_TENANT_ID`, `MS_CLIENT_ID`, `MS_CERT_THUMBPRINT`, `MS_CERT_KEY` (or `MS_CLIENT_SECRET`). Graph application permissions: `Mail.Send`, `Files.ReadWrite.All` (admin consent). The old `send-mail` function can be deleted.
+- **QuickBooks Online**: Import from spreadsheet accepts QBO exports as they are — customer and vendor contact lists, products and services, chart of accounts, trial balance, A/R and A/P aging detail (unpaid invoices and bills).
+
 ## What's new in v3.2 — Telegram and email for approvals, temporary passwords, activity log, void
 
 The update package has one SQL file, `RUN-THIS-IN-SUPABASE.sql`, that brings any database from v3.0 up to v3.2 (it skips what is already there and can be run twice).
